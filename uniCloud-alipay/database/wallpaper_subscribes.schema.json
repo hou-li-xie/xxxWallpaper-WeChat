@@ -1,0 +1,36 @@
+// 微信订阅消息额度表
+// 用户每授权一次「一次性订阅消息」，remain +1；云函数成功下发一条后 remain -1。
+// 所有读写均通过 wallpaper-action 云函数，clientDB 全部禁止。
+{
+	"bsonType": "object",
+	"required": ["user_id", "tmpl_id", "remain"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"user_id": {
+			"title": "订阅用户ID",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id"
+		},
+		"tmpl_id": {
+			"title": "微信订阅消息模板ID",
+			"bsonType": "string"
+		},
+		"remain": {
+			"title": "剩余可下发条数",
+			"description": "一次性订阅：每授权一次+1，每成功下发一条-1",
+			"bsonType": "int"
+		},
+		"update_time": {
+			"title": "最近变更时间",
+			"bsonType": "timestamp"
+		}
+	}
+}

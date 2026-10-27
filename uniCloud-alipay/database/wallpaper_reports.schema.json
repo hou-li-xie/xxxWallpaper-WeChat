@@ -1,0 +1,49 @@
+// 用户举报表（照片举报）
+// 所有读写均通过 wallpaper-action 云函数（管理员权限），clientDB 全部禁止
+{
+	"bsonType": "object",
+	"required": ["wallpaper_id", "reporter_id", "reason", "status", "create_time"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"wallpaper_id": {
+			"title": "被举报的照片ID",
+			"bsonType": "string",
+			"foreignKey": "wallpapers._id"
+		},
+		"reporter_id": {
+			"title": "举报人用户ID",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id"
+		},
+		"reason": {
+			"title": "举报原因",
+			"bsonType": "string"
+		},
+		"status": {
+			"title": "处理状态",
+			"description": "0=待处理 1=已处理（照片被删除）2=已忽略",
+			"bsonType": "int",
+			"defaultValue": 0
+		},
+		"handle_note": {
+			"title": "处理备注",
+			"bsonType": "string"
+		},
+		"handle_time": {
+			"title": "处理时间",
+			"bsonType": "timestamp"
+		},
+		"create_time": {
+			"title": "举报时间",
+			"bsonType": "timestamp"
+		}
+	}
+}

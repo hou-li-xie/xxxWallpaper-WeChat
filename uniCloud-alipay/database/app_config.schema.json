@@ -1,0 +1,23 @@
+// 文档教程: https://uniapp.dcloud.net.cn/uniCloud/schema
+// 全局开关表：全表仅一条记录，_id 固定为 global，仅通过 web 控制台手动维护
+{
+	"bsonType": "object",
+	"required": ["hide_content"],
+	"permission": {
+		"read": true,
+		// 写入全部关闭，只能由开发者在 uniCloud web 控制台修改，防止客户端篡改
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "固定为 global，全表仅此一条记录"
+		},
+		"hide_content": {
+			"title": "内容隐藏开关",
+			"description": "true=隐藏指定内容，false=正常显示；具体隐藏哪些内容由前端读取后自行控制",
+			"bsonType": "bool"
+		}
+	}
+}

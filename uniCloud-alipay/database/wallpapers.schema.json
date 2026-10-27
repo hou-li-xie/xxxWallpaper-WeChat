@@ -1,0 +1,127 @@
+// 文档教程: https://uniapp.dcloud.net.cn/uniCloud/schema
+{
+	"bsonType": "object",
+	"required": [],
+	"permission": {
+		"read": "doc.audit_status == 1 || doc.author_id == auth.uid",
+		// create/update/delete 全关闭，一切写入通过 wallpaper-action 云函数（管理员权限 + 封禁拦截）
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"author": {
+			"title": "作者详情",
+			"bsonType": "object",
+			"required": [
+				"avatar", "name"
+			],
+			"properties": {
+				"name": {
+					"bsonType": "string",
+					"title": "用户名"
+				},
+				"avatar": {
+					"bsonType": "file",
+					"title": "用户头像"
+				}
+			}
+		},
+		"image":{
+			"title": "图片",
+			"description": "图片 fileID",
+			"bsonType": "string"
+		},
+		"width":{
+			"title": "图片宽度",
+			"description": "裁剪输出像素宽，publish 云函数校验写入，仅用于瀑布流布局；历史数据无此字段时按 375 兜底",
+			"bsonType": "int"
+		},
+		"height":{
+			"title": "图片高度",
+			"description": "裁剪输出像素高，publish 云函数校验写入，仅用于瀑布流布局；历史数据无此字段时按 400 兜底",
+			"bsonType": "int"
+		},
+		"author_id":{
+			"title": "发布者ID",
+			"description": "uni-id-users._id，服务端强制写入当前登录用户，客户端传值会被覆盖，用于归属与权限校验",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id",
+			"forceDefaultValue": {
+				"$env": "uid"
+			}
+		},
+		"description":{
+			"title": "描述",
+			"bsonType": "string"
+		},
+		"tags":{
+			"title": "标签",
+			"description": "发布时选择的分类标签（白名单：风景/人物/动漫/萌宠/美食/其他，最多2个），由 publish 云函数校验写入",
+			"bsonType": "array",
+			"items": {
+				"bsonType": "string"
+			}
+		},
+		"createTime":{
+			"bsonType": "timestamp",
+			"description": "创建时间，服务端强制写入",
+			"forceDefaultValue": {
+				"$env": "now"
+			}
+		},
+		"audit_status":{
+			"title": "审核状态",
+			"description": "0:待审核 1:审核通过 2:审核驳回；新建一律待审核，仅管理端云函数可修改",
+			"bsonType": "int",
+			"forceDefaultValue": 0,
+			"enum": [
+				{ "text": "待审核", "value": 0 },
+				{ "text": "已通过", "value": 1 },
+				{ "text": "已驳回", "value": 2 }
+			],
+			"permission": {
+				"write": false
+			}
+		},
+		"audit_reason":{
+			"title": "驳回原因",
+			"description": "审核驳回时由管理端填写",
+			"bsonType": "string",
+			"permission": {
+				"write": false
+			}
+		},
+		"audit_time":{
+			"title": "审核时间",
+			"description": "管理端审核操作时间",
+			"bsonType": "timestamp",
+			"permission": {
+				"write": false
+			}
+		},
+		"info":{
+		"title": "点赞浏览等信息",
+		"bsonType": "object",
+		"description": "初始计数由 publish 云函数写入 {likeNum:0, commentNum:0}；viewNum 字段无需初始化，recordView 用 inc 自增时不存在会自动创建；之后仅由 wallpaper-action 云函数增减",
+		"properties":{
+			"likeNum":{
+				"bsonType": "int",
+				"title": "点赞数量"
+			},
+			"commentNum":{
+				"bsonType": "int",
+				"title": "评论数量"
+			},
+			"viewNum":{
+				"bsonType": "int",
+				"title": "浏览数量",
+				"description": "recordView action 自增；历史数据无此字段按 0 展示"
+			}
+		}
+	}
+	}
+}

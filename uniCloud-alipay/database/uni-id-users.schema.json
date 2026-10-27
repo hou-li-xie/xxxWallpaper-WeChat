@@ -1,0 +1,82 @@
+// 用户表：所有读写均通过 user-login 云函数（管理端权限），前端 clientDB 全部禁止直接操作
+{
+	"bsonType": "object",
+	"required": ["nickname", "avatar"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "用户ID，系统自动生成"
+		},
+		"wx_openid": {
+			"bsonType": "string",
+			"title": "微信小程序openid",
+			"description": "jscode2session 返回的用户唯一标识"
+		},
+		"guest_id": {
+			"bsonType": "string",
+			"title": "App游客设备标识",
+			"description": "App 端无手机号/微信登录，首次登录由服务端生成并持久在客户端本地"
+		},
+		"mobile": {
+			"bsonType": "string",
+			"title": "手机号",
+			"description": "一键登录用户手机号（当前未启用）"
+		},
+		"nickname": {
+			"bsonType": "string",
+			"title": "昵称",
+			"maxLength": 20
+		},
+		"avatar": {
+			"bsonType": "string",
+			"title": "头像",
+			"description": "云存储 fileID（cloud:// 开头）或包内默认头像路径 /static/avatars/aN.png"
+		},
+		"push_cid": {
+			"bsonType": "string",
+			"title": "uniPush客户端标识"
+		},
+		"push_cid_time": {
+			"bsonType": "timestamp",
+			"title": "push标识上报时间"
+		},
+		"migrate_code": {
+			"bsonType": "string",
+			"title": "账号迁移码",
+			"description": "8位大写字母数字，App 换机/重装后凭此码恢复账号；重新生成后旧码立即失效"
+		},
+		"migrate_code_time": {
+			"bsonType": "timestamp",
+			"title": "迁移码生成时间"
+		},
+		"register_date": {
+			"bsonType": "timestamp",
+			"title": "注册时间"
+		},
+		"last_login_date": {
+			"bsonType": "timestamp",
+			"title": "最后登录时间"
+		},
+		"status": {
+			"bsonType": "int",
+			"title": "用户状态",
+			"description": "0:正常 1:禁用",
+			"defaultValue": 0
+		},
+		"is_admin": {
+			"bsonType": "int",
+			"title": "是否超级管理员",
+			"description": "0:普通用户 1:超级管理员；只能在 uniCloud 控制台手动设置为 1，客户端不可写",
+			"defaultValue": 0,
+			"enum": [
+				{ "text": "普通用户", "value": 0 },
+				{ "text": "超级管理员", "value": 1 }
+			]
+		}
+	}
+}

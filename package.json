@@ -1,0 +1,13 @@
+{
+	"name": "wallpaper-miniapp",
+	"version": "1.0.0",
+	"description": "壁纸社区微信小程序（uni-app Vue3 + uniCloud）",
+	"dependencies": {
+		"pinia": "2.0.36"
+	},
+	"devDependencies": {
+		"@dcloudio/types": "^3.4.8",
+		"typescript": "^5.4.5",
+		"vue": "^3.4.21"
+	}
+}

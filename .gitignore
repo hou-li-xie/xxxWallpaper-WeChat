@@ -1,0 +1,8 @@
+unpackage/
+node_modules/
+.DS_Store
+.hbuilderx/
+
+# 云端密钥配置，禁止提交
+**/uni-config-center/user-login/config.json
+**/uni-config-center/uni-id/config.json

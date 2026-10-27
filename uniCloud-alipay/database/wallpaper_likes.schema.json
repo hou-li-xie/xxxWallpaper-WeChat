@@ -1,0 +1,33 @@
+// 照片点赞记录表：一个用户对一张照片最多一条
+// 所有读写均通过 wallpaper-action 云函数（管理员权限），clientDB 全部禁止
+{
+	"bsonType": "object",
+	"required": ["wallpaper_id", "user_id"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"wallpaper_id": {
+			"title": "照片ID",
+			"description": "wallpapers._id",
+			"bsonType": "string",
+			"foreignKey": "wallpapers._id"
+		},
+		"user_id": {
+			"title": "点赞用户ID",
+			"description": "uni-id-users._id",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id"
+		},
+		"create_time": {
+			"title": "点赞时间",
+			"bsonType": "timestamp"
+		}
+	}
+}

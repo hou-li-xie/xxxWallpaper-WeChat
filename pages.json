@@ -1,0 +1,118 @@
+{
+	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+		{
+			"path": "pages/Home/index",
+			"style": {
+				"navigationBarTitleText": "uni-app",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/Message/message",
+			"style": {
+				"navigationBarTitleText": "消息"
+			}
+		},
+		{
+			"path": "pages/Mine/Mine",
+			"style": {
+				"navigationBarTitleText": ""
+			}
+		},
+		{
+			"path": "pages/Login/login",
+			"style": {
+				"navigationBarTitleText": "登录"
+			}
+		},
+		{
+			"path": "pages/Publish/publish",
+			"style": {
+				"navigationBarTitleText": "发布美照"
+			}
+		},
+		{
+			"path": "pages/Crop/crop",
+			"style": {
+				"navigationBarTitleText": "裁剪",
+				"navigationStyle": "custom",
+				"backgroundColor": "#000000"
+			}
+		},
+		{
+			"path": "pages/MyUploads/my-uploads",
+			"style": {
+				"navigationBarTitleText": "我的上传"
+			}
+		},
+		{
+			"path": "pages/Detail/detail",
+			"style": {
+				"navigationBarTitleText": "详情"
+			}
+		},
+		{
+			"path": "pages/Notice/notice",
+			"style": {
+				"navigationBarTitleText": "公告"
+			}
+		},
+		{
+			"path": "pages/Admin/admin",
+			"style": {
+				"navigationBarTitleText": "后台管理"
+			}
+		},
+		{
+			"path": "pages/Rank/rank",
+			"style": {
+				"navigationBarTitleText": "排行榜"
+			}
+		},
+		{
+			"path": "pages/Favorites/favorites",
+			"style": {
+				"navigationBarTitleText": "我的收藏",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/UserHome/user-home",
+			"style": {
+				"navigationBarTitleText": "TA 的主页",
+				"enablePullDownRefresh": true
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "uni-app",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	},
+	"uniIdRouter": {},
+	"tabBar": {
+		"color": "#000000",
+		"selectedColor": "#1196db",
+		"borderStyle": "white",
+		"backgroundColor": "#ffffff",
+		"list": [{
+			"pagePath": "pages/Home/index",
+			"iconPath": "/static/Icons/HomeSelection.png",
+			"selectedIconPath": "/static/Icons/Home.png",
+			"text": "首页"
+		}, {
+			"pagePath": "pages/Message/message",
+			"iconPath": "/static/Icons/message.png",
+			"selectedIconPath": "/static/Icons/messageSelection.png",
+			"text": "消息"
+		}, {
+			"pagePath": "pages/Mine/Mine",
+			"iconPath": "/static/Icons/Mine.png",
+			"selectedIconPath": "/static/Icons/MineSelection.png",
+			"text": "我的"
+		}]
+	}
+
+}

@@ -1,0 +1,82 @@
+// 站内消息通知表（评论被回复时写入）
+// 所有读写均通过 wallpaper-action 云函数（管理员权限），clientDB 全部禁止
+{
+	"bsonType": "object",
+	"required": ["user_id", "type", "wallpaper_id", "from", "content", "is_read", "create_time"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"user_id": {
+			"title": "接收通知的用户ID",
+			"description": "被回复人 uni-id-users._id",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id"
+		},
+		"type": {
+			"title": "通知类型",
+			"description": "reply=评论被回复",
+			"bsonType": "string"
+		},
+		"wallpaper_id": {
+			"title": "照片ID",
+			"description": "通知归属的照片 wallpapers._id，点击通知跳转详情用",
+			"bsonType": "string",
+			"foreignKey": "wallpapers._id"
+		},
+		"wallpaper_image": {
+			"title": "照片封面快照",
+			"description": "回复发生时照片 image fileID，通知列表缩略图用",
+			"bsonType": "string"
+		},
+		"from": {
+			"title": "触发者快照",
+			"description": "回复者 {uid,name,avatar}",
+			"bsonType": "object",
+			"properties": {
+				"uid": {
+					"bsonType": "string",
+					"title": "回复者用户ID"
+				},
+				"name": {
+					"bsonType": "string",
+					"title": "回复者昵称"
+				},
+				"avatar": {
+					"bsonType": "file",
+					"title": "回复者头像"
+				}
+			}
+		},
+		"reply_id": {
+			"title": "回复记录ID",
+			"description": "wallpaper_comments._id（新产生的那条回复）",
+			"bsonType": "string"
+		},
+		"parent_id": {
+			"title": "顶级评论ID",
+			"description": "被回复评论所属的顶级评论 wallpaper_comments._id",
+			"bsonType": "string"
+		},
+		"content": {
+			"title": "回复内容",
+			"bsonType": "string"
+		},
+		"is_read": {
+			"title": "是否已读",
+			"description": "0=未读 1=已读，仅云函数可改",
+			"bsonType": "int",
+			"defaultValue": 0
+		},
+		"create_time": {
+			"title": "通知时间",
+			"bsonType": "timestamp"
+		}
+	}
+}

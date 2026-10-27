@@ -1,0 +1,75 @@
+// 照片评论表
+// 所有读写均通过 wallpaper-action 云函数（管理员权限），clientDB 全部禁止
+{
+	"bsonType": "object",
+	"required": ["wallpaper_id", "user_id", "content"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"wallpaper_id": {
+			"title": "照片ID",
+			"description": "wallpapers._id",
+			"bsonType": "string",
+			"foreignKey": "wallpapers._id"
+		},
+		"user_id": {
+			"title": "评论用户ID",
+			"description": "uni-id-users._id",
+			"bsonType": "string",
+			"foreignKey": "uni-id-users._id"
+		},
+		"author": {
+			"title": "评论者快照",
+			"description": "冗余昵称与头像fileID，避免用户改昵称后历史评论失真",
+			"bsonType": "object",
+			"required": ["name", "avatar"],
+			"properties": {
+				"name": {
+					"bsonType": "string",
+					"title": "昵称"
+				},
+				"avatar": {
+					"bsonType": "file",
+					"title": "头像"
+				}
+			}
+		},
+		"content": {
+			"title": "评论内容",
+			"bsonType": "string",
+			"description": "1-100字"
+		},
+		"parent_id": {
+			"title": "父评论ID",
+			"description": "顶级评论无此字段；回复时指向顶级评论 wallpaper_comments._id（两级盖楼，回复回复也挂在同一顶级评论下）",
+			"bsonType": "string",
+			"foreignKey": "wallpaper_comments._id"
+		},
+		"reply_to": {
+			"title": "被回复人快照",
+			"description": "仅回复记录存在：{uid:被回复用户ID, name:被回复时昵称}，由云函数根据 parentId/replyId 解析，客户端不可信",
+			"bsonType": "object",
+			"properties": {
+				"uid": {
+					"bsonType": "string",
+					"title": "被回复用户ID"
+				},
+				"name": {
+					"bsonType": "string",
+					"title": "被回复用户昵称"
+				}
+			}
+		},
+		"create_time": {
+			"title": "评论时间",
+			"bsonType": "timestamp"
+		}
+	}
+}

@@ -1,0 +1,7 @@
+{
+	"name": "user-login",
+	"dependencies": {
+		"uni-id-common": "file:../common/uni-id-common"
+	},
+	"main": "index.js"
+}

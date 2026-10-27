@@ -1,24 +1,11 @@
 <template>
 	<view class="page">
-		<!-- 榜单切换 -->
-		<view class="tabs">
-			<view
-				v-for="tab in tabs"
-				:key="tab.value"
-				class="tab"
-				:class="{ active: rankType === tab.value }"
-				@click="switchTab(tab.value)"
-			>
-				{{ tab.label }}
-			</view>
-		</view>
+		<!-- 榜单切换：标签栏样式由 filter-tabs 组件统一提供 -->
+		<filter-tabs :tabs="tabs" :model-value="rankType" @change="switchTab" />
 
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
 			<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-			<view v-if="!skVisible && !list.length" class="empty">
-				<uni-icons type="trophy" size="46" color="#bcd0e2"></uni-icons>
-				<text class="empty-text">还没有上榜照片</text>
-			</view>
+			<empty-state v-if="!skVisible && !list.length" icon="trophy" text="还没有上榜照片" />
 
 			<view v-else class="list">
 				<!-- 数据到达后：卡片 → 图片 → 标题 → 头像 → 名称 → 计数，依次浮现 -->
@@ -102,6 +89,7 @@
 	const rankType = ref('like');
 	const loading = ref(false);
 	const list = ref<any[]>([]);
+	let reqId = 0;
 
 	// 骨架屏：首屏/切换榜单加载中显示，数据到达后淡出
 	const { skVisible, skFading, skDone, skRestart } = useSkeleton();
@@ -137,6 +125,8 @@
 	}
 
 	async function loadRank() {
+		// 请求序号：快速切换榜单时丢弃旧响应，避免覆盖新榜单
+		const seq = ++reqId;
 		loading.value = true;
 		list.value = [];
 		try {
@@ -144,6 +134,7 @@
 				name: 'wallpaper-action',
 				data: { action: 'ranking', rankType: rankType.value }
 			});
+			if (seq !== reqId) return;
 			const r = res.result || {};
 			if (r.errCode) {
 				uni.showToast({ title: r.errMsg || '加载失败', icon: 'none' });
@@ -156,17 +147,21 @@
 				if (item.author && item.author.avatar) fileIDs.push(item.author.avatar);
 			});
 			const urlMap = await resolveFileUrls(fileIDs);
+			if (seq !== reqId) return;
 			list.value = records.map((item) => ({
 				...item,
 				_imgUrl: urlMap[item.image] || '',
 				_avatarUrl: (item.author && urlMap[item.author.avatar]) || ''
 			}));
 		} catch (e) {
+			if (seq !== reqId) return;
 			console.error('排行榜加载失败', e);
 			uni.showToast({ title: '加载失败，请重试', icon: 'none' });
 		} finally {
-			loading.value = false;
-			skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			if (seq === reqId) {
+				loading.value = false;
+				skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			}
 		}
 	}
 
@@ -180,42 +175,6 @@
 	.page {
 		min-height: 100vh;
 		background: #f5f7fa;
-	}
-
-	.tabs {
-		position: sticky;
-		top: 0;
-		z-index: 10;
-		display: flex;
-		background: #fff;
-		padding: 0 10rpx;
-		box-shadow: 0 2rpx 12rpx rgba(56, 151, 228, 0.06);
-
-		.tab {
-			flex: 1;
-			text-align: center;
-			padding: 26rpx 0;
-			font-size: 28rpx;
-			color: #6b7d8f;
-			position: relative;
-
-			&.active {
-				color: #2c98e7;
-				font-weight: bold;
-
-				&::after {
-					content: '';
-					position: absolute;
-					bottom: 8rpx;
-					left: 50%;
-					transform: translateX(-50%);
-					width: 48rpx;
-					height: 6rpx;
-					border-radius: 3rpx;
-					background: #2c98e7;
-				}
-			}
-		}
 	}
 
 	.list {
@@ -334,19 +293,6 @@
 			font-size: 26rpx;
 			font-weight: bold;
 			color: #4a5a6a;
-		}
-	}
-
-	.empty {
-		padding-top: 180rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-
-		.empty-text {
-			margin-top: 20rpx;
-			font-size: 28rpx;
-			color: #9bb4c9;
 		}
 	}
 

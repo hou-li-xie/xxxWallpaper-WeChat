@@ -1,8 +1,15 @@
 {
 	"wx": {
 		"replyTemplateId": "SbQFAlgMxoqlZcDFueY6-poWplZI3PktKjRFbHyZvRk",
-		"auditTemplateId":"a9Bs_7Z9L0y0CaJEaTUZ-G7Fpnf16jqcvOKAWAzKZ48",
+		"auditTemplateId": "a9Bs_7Z9L0y0CaJEaTUZ-G7Fpnf16jqcvOKAWAzKZ48",
 		"miniState": "formal",
 		"page": "pages/Home/index"
+	},
+	"app": {
+		"appId": "__UNI__F181198",
+		"versionCode": "100",
+		"wgtUrl": "",
+		"apkUrl": "",
+		"updateNotes": ""
 	}
 }

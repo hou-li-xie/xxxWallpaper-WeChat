@@ -3,11 +3,13 @@
 		<!-- 骨架层绝对定位覆盖其上，加载期给容器撑高避免塌陷跳动 -->
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
 			<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-			<view v-if="!skVisible && !list.length" class="empty">
-				<uni-icons type="star" size="46" color="#bcd0e2"></uni-icons>
-				<text class="empty-text">还没有收藏照片</text>
-				<button class="go-home" @click="goHome">去逛逛</button>
-			</view>
+			<empty-state
+				v-if="!skVisible && !list.length"
+				icon="star"
+				text="还没有收藏照片"
+				button-text="去逛逛"
+				@action="goHome"
+			/>
 
 			<view class="list">
 				<!-- 数据到达后：卡片 → 图片 → 标题 → 时间 → 数据行，依次浮现 -->
@@ -63,6 +65,7 @@
 	import { onLoad, onReachBottom, onPullDownRefresh } from '@dcloudio/uni-app';
 	import { isLoggedIn } from '../../utils/auth';
 	import { resolveFileUrls } from '../../utils/cloud-file';
+	import { formatDate as formatTime } from '../../utils/format-time';
 	import { useSkeleton } from '../../utils/skeleton';
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
@@ -74,6 +77,11 @@
 	const list = ref<any[]>([]);
 	const loading = ref(false);
 	const hasMore = ref(false);
+	// 服务端原始收藏分页游标：服务端会过滤已删除/未过审照片，因此不能用列表长度当 skip
+	const rawSkip = ref(0);
+	const RAW_LIMIT = 20;
+	// 请求序号：刷新时递增，用于丢弃仍在飞行中的旧请求结果
+	let reqId = 0;
 
 	// 骨架屏：首屏加载中显示，数据到达后淡出并与内容错位浮现交错
 	const { skVisible, skFading, skDone } = useSkeleton();
@@ -90,7 +98,7 @@
 
 	onLoad(() => {
 		if (!isLoggedIn()) {
-			uni.redirectTo({ url: '/pages/Login/login' });
+			uni.redirectTo({ url: '/pages/Login/login?redirect=' + encodeURIComponent('/pages/Favorites/favorites') });
 			return;
 		}
 		reload();
@@ -121,19 +129,25 @@
 	});
 
 	async function reload() {
+		reqId++;
+		rawSkip.value = 0;
 		list.value = [];
 		hasMore.value = false;
-		await loadMore();
+		await loadMore(reqId);
 	}
 
-	async function loadMore() {
-		if (loading.value) return;
+	async function loadMore(forceSeq?: number) {
+		const seq = typeof forceSeq === 'number' ? forceSeq : reqId;
+		if (seq !== reqId) return;
+		if (loading.value && typeof forceSeq !== 'number') return;
 		loading.value = true;
 		try {
 			const res = await uniCloud.callFunction({
 				name: 'wallpaper-action',
-				data: { action: 'favoriteList', skip: list.value.length }
+				data: { action: 'favoriteList', skip: rawSkip.value }
 			});
+			// 刷新已发生：丢弃过期响应
+			if (seq !== reqId) return;
 			const r = res.result || {};
 			if (r.errCode) {
 				uni.showToast({ title: r.errMsg || '加载失败', icon: 'none' });
@@ -141,6 +155,7 @@
 			}
 			const records: any[] = r.list || [];
 			const urlMap = await resolveFileUrls(records.map((i) => i.image).filter(Boolean));
+			if (seq !== reqId) return;
 			const mapped = records.map((i) => ({
 				...i,
 				// _favId 即收藏记录 _id，create_time 已在服务端按收藏时间排序；这里取回展示
@@ -149,12 +164,17 @@
 			}));
 			list.value = list.value.concat(mapped);
 			hasMore.value = !!r.hasMore;
+			// 按服务端原始分页推进游标，避免过滤后长度与 skip 错位
+			rawSkip.value += RAW_LIMIT;
 		} catch (e) {
+			if (seq !== reqId) return;
 			console.error('收藏列表加载失败', e);
 			uni.showToast({ title: '加载失败，请重试', icon: 'none' });
 		} finally {
-			loading.value = false;
-			skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			if (seq === reqId) {
+				loading.value = false;
+				skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			}
 		}
 	}
 
@@ -167,12 +187,6 @@
 		uni.switchTab({ url: '/pages/Home/index' });
 	}
 
-	function formatTime(ts: any): string {
-		if (!ts) return '';
-		const d = new Date(Number(ts));
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-	}
 </script>
 
 <style lang="scss">
@@ -274,31 +288,4 @@
 		color: #a7bfd3;
 	}
 
-	.empty {
-		padding-top: 180rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-
-		.empty-text {
-			margin-top: 20rpx;
-			font-size: 28rpx;
-			color: #9bb4c9;
-		}
-
-		.go-home {
-			margin-top: 36rpx;
-			height: 76rpx;
-			line-height: 76rpx;
-			padding: 0 56rpx;
-			border-radius: 38rpx;
-			background: linear-gradient(90deg, #4facfe 0%, #2c98e7 100%);
-			color: #fff;
-			font-size: 28rpx;
-
-			&::after {
-				border: none;
-			}
-		}
-	}
 </style>

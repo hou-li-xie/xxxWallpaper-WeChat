@@ -31,12 +31,13 @@ export function getUserInfo(): UserInfo | null {
 /**
  * 判断当前是否已登录（token 存在且未过期）
  * 本地时间可能不准，过期判断只作为前置拦截，真正校验以云端 checkToken 为准
+ * 过期时间为 0/缺失时按「未知即过期」处理，避免 token 失效后仍显示登录态
  */
 export function isLoggedIn(): boolean {
 	const token = getToken();
 	if (!token) return false;
 	const expired = Number(uni.getStorageSync(TOKEN_EXPIRED_KEY) || 0);
-	if (expired && expired <= Date.now()) return false;
+	if (!expired || expired <= Date.now()) return false;
 	return true;
 }
 
@@ -45,7 +46,8 @@ export function isLoggedIn(): boolean {
  */
 export function setLogin(data: { token: string; tokenExpired?: number; userInfo?: UserInfo }): void {
 	uni.setStorageSync(TOKEN_KEY, data.token);
-	uni.setStorageSync(TOKEN_EXPIRED_KEY, data.tokenExpired || 0);
+	// 未返回过期时间时，兜底为当前时间，避免 isLoggedIn 一直判定为已登录
+	uni.setStorageSync(TOKEN_EXPIRED_KEY, data.tokenExpired || Date.now());
 	uni.setStorageSync(USER_INFO_KEY, data.userInfo || {});
 	uni.$emit('loginSuccess', data.userInfo);
 }

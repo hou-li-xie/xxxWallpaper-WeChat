@@ -37,20 +37,15 @@
 				</view>
 
 				<view class="msg-list">
-					<!-- 左滑删除：底层删除按钮 + 上层可滑动内容 -->
-					<view class="swipe-item" v-for="(n, index) in list" :key="n._id">
-						<view class="swipe-actions">
-							<view class="action delete" @click="deleteNoti(n)">删除</view>
-						</view>
-						<view
-							class="swipe-content"
-							:class="{ dragging: n._dragging }"
-							:style="{ transform: 'translateX(' + (n._offset || 0) + 'px)' }"
-							@touchstart="onTouchStart($event, n)"
-							@touchmove="onTouchMove($event, n)"
-							@touchend="onTouchEnd($event, n)"
-							@click="closeSwipe(n)"
-						>
+					<!-- 左滑删除：交互与删除按钮由 swipe-cell 组件统一提供 -->
+					<swipe-cell
+						v-for="(n, index) in list"
+						:key="n._id"
+						:actions="msgActions"
+						:width="140"
+						:gap="16"
+						@action="(key) => onSwipeAction(key, n)"
+					>
 							<view
 								class="msg-item reveal-blk"
 								:class="{ unread: !n.is_read }"
@@ -80,18 +75,14 @@
 									mode="aspectFill"
 								></image>
 							</view>
-						</view>
-					</view>
+					</swipe-cell>
 
 					<view v-if="loading" class="loading-tip">加载中...</view>
 					<view v-else-if="hasMore" class="loading-tip" @click="loadMore">加载更多</view>
 				</view>
 
 				<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-				<view v-if="!skVisible && !list.length" class="empty">
-					<uni-icons type="checkmarkempty" size="46" color="#a7bfd3"></uni-icons>
-					<text class="empty-text">还没有消息</text>
-				</view>
+				<empty-state v-if="!skVisible && !list.length" icon="checkmarkempty" icon-color="#a7bfd3" text="还没有消息" :top="160" />
 
 				<!-- 骨架屏：头像 + 两行文字 + 时间 + 缩略图，共用一道斜向光带 -->
 				<view v-if="skVisible" class="sk-layer" :class="{ 'sk-out': skFading }">
@@ -121,6 +112,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { onShow, onReachBottom } from '@dcloudio/uni-app';
 import { resolveFileUrls } from '../../utils/cloud-file';
+import { formatTime } from '../../utils/format-time';
 import { callMessage } from '../../utils/message';
 import { useSkeleton } from '../../utils/skeleton';
 import { useMessageStore } from '../../store/message';
@@ -144,7 +136,11 @@ const messageStore = useMessageStore();
 const list = ref<any[]>([]);
 const loading = ref(false);
 const hasMore = ref(false);
-const skip = ref(0);
+// 分页游标按服务端原始条数推进：删除通知后同步回退，避免后续分页漏一条
+const PAGE_SIZE = 20;
+let rawSkip = 0;
+// 请求序号：onShow 重置刷新时丢弃仍在飞行中的旧响应
+let reqId = 0;
 const templateId = ref('');
 const remain = ref(0); // 当前剩余可接收的微信通知条数（一次性订阅，授权1次+1，下发1条-1）
 const subscribing = ref(false);
@@ -198,11 +194,17 @@ function onLoginSuccess() {
 uni.$on('loginSuccess', onLoginSuccess);
 
 async function loadList(reset: boolean = false) {
-	if (loading.value) return;
+	// 重置刷新可越过 loading 守卫，并让旧请求结果失效
+	if (reset) {
+		reqId++;
+		rawSkip = 0;
+	}
+	const seq = reqId;
+	if (loading.value && !reset) return;
 	loading.value = true;
-	if (reset) skip.value = 0;
 	try {
-		const res = await callMessage('notifications', { skip: skip.value });
+		const res = await callMessage('notifications', { skip: rawSkip });
+		if (seq !== reqId) return;
 		if (res.errCode !== 0) {
 			uni.showToast({ title: res.errMsg || '消息加载失败', icon: 'none' });
 			return;
@@ -215,19 +217,23 @@ async function loadList(reset: boolean = false) {
 			if (n.wallpaper_image) fileIds.push(n.wallpaper_image);
 		});
 		const urlMap = await resolveFileUrls(fileIds);
+		if (seq !== reqId) return;
 		const mapped = rows.map((n) => ({
 			...n,
 			_avatarUrl: n.from && n.from.avatar ? urlMap[n.from.avatar] || '' : '',
 			_wallpaperUrl: n.wallpaper_image ? urlMap[n.wallpaper_image] || '' : ''
 		}));
 		list.value = reset ? mapped : list.value.concat(mapped);
-		skip.value = list.value.length;
+		rawSkip += PAGE_SIZE;
 		hasMore.value = !!res.hasMore;
 	} catch (e) {
+		if (seq !== reqId) return;
 		uni.showToast({ title: '消息加载失败', icon: 'none' });
 	} finally {
-		loading.value = false;
-		skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+		if (seq === reqId) {
+			loading.value = false;
+			skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+		}
 	}
 }
 
@@ -244,7 +250,6 @@ function actionText(type: string): string {
 }
 
 async function openNoti(n: any) {
-	if (n._offset) return closeSwipe(n); // 滑开状态下点击仅收起
 	// 未读先置已读并立即刷新角标，再跳详情（不阻塞跳转）
 	if (!n.is_read) {
 		n.is_read = 1;
@@ -277,61 +282,14 @@ async function onMarkAllRead() {
 	}
 }
 
-/* ============ 左滑手势 + 删除通知 ============ */
-// 操作区宽度 140rpx（单个删除按钮）
-const ACTION_WIDTH = uni.upx2px(140);
-// 手势过程状态（非响应式，够用即可）
-let touchState: { item: any; startX: number; startY: number; baseOffset: number; isHorizontal: boolean | null } = { item: null, startX: 0, startY: 0, baseOffset: 0, isHorizontal: null };
+/* ============ 左滑删除：交互由 swipe-cell 组件处理 ============ */
+const msgActions = [{ key: 'delete', label: '删除', type: 'delete' }];
 
-function onTouchStart(e: any, item: any) {
-	closeOthers(item._id); // 同时只展开一条
-	const t = e.touches[0];
-	touchState = {
-		item,
-		startX: t.clientX,
-		startY: t.clientY,
-		baseOffset: item._offset || 0,
-		isHorizontal: null
-	};
-	item._dragging = true;
-}
-
-function onTouchMove(e: any, item: any) {
-	if (touchState.item !== item) return;
-	const t = e.touches[0];
-	const dx = t.clientX - touchState.startX;
-	const dy = t.clientY - touchState.startY;
-	// 首次有效位移时判定手势方向：竖向滚动不拦截
-	if (touchState.isHorizontal === null) {
-		if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-		touchState.isHorizontal = Math.abs(dx) > Math.abs(dy);
-	}
-	if (!touchState.isHorizontal) return;
-	item._offset = Math.min(0, Math.max(-ACTION_WIDTH, touchState.baseOffset + dx));
-}
-
-function onTouchEnd(e: any, item: any) {
-	if (touchState.item !== item) return;
-	item._dragging = false;
-	if (touchState.isHorizontal) {
-		// 超过 1/3 宽度自动展开，否则弹回
-		item._offset = item._offset < -ACTION_WIDTH / 3 ? -ACTION_WIDTH : 0;
-	}
-	touchState.item = null;
-}
-
-function closeSwipe(item: any) {
-	item._offset = 0;
-}
-
-function closeOthers(exceptId: string) {
-	list.value.forEach((i) => {
-		if (i._id !== exceptId && i._offset) i._offset = 0;
-	});
+function onSwipeAction(key: string, n: any) {
+	if (key === 'delete') deleteNoti(n);
 }
 
 async function deleteNoti(n: any) {
-	closeSwipe(n);
 	uni.showLoading({ title: '删除中…', mask: true });
 	try {
 		const res = await callMessage('deleteNotification', { notiId: n._id });
@@ -340,6 +298,8 @@ async function deleteNoti(n: any) {
 			return;
 		}
 		list.value = list.value.filter((i) => i._id !== n._id);
+		// 服务端数据同步减少一条，游标回退，避免下次分页跳过一条
+		rawSkip = Math.max(0, rawSkip - 1);
 		messageStore.refreshBadge(); // 删的可能是未读，刷新 tab 角标
 	} catch (e) {
 		uni.showToast({ title: '网络异常，请重试', icon: 'none' });
@@ -440,20 +400,6 @@ function goLogin() {
 	uni.navigateTo({ url: '/pages/Login/login' });
 }
 
-function formatTime(ts) {
-	if (!ts) return '';
-	const diff = Date.now() - ts;
-	const min = 60 * 1000;
-	const hour = 60 * min;
-	const day = 24 * hour;
-	if (diff < min) return '刚刚';
-	if (diff < hour) return Math.floor(diff / min) + '分钟前';
-	if (diff < day) return Math.floor(diff / hour) + '小时前';
-	if (diff < 7 * day) return Math.floor(diff / day) + '天前';
-	const d = new Date(ts);
-	const pad = (x: number): string => String(x).padStart(2, '0');
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 </script>
 
 <style lang="scss" scoped>
@@ -572,44 +518,12 @@ function formatTime(ts) {
 		margin-top: 10rpx;
 	}
 
-	/* 左滑项：底层删除按钮 + 上层滑动内容 */
+	/* 左滑骨架行：真实消息的左滑交互见 components/swipe-cell */
 	.swipe-item {
 		position: relative;
 		margin-bottom: 16rpx;
 		border-radius: 20rpx;
 		overflow: hidden;
-	}
-
-	.swipe-actions {
-		position: absolute;
-		right: 0;
-		top: 0;
-		bottom: 0;
-		width: 140rpx;
-		display: flex;
-
-		.action {
-			flex: 1;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			font-size: 28rpx;
-			color: #fff;
-
-			&.delete {
-				background: #e65a5a;
-			}
-		}
-	}
-
-	.swipe-content {
-		position: relative;
-		transition: transform 0.25s ease;
-
-		// 拖动过程中关掉过渡，跟手
-		&.dragging {
-			transition: none;
-		}
 	}
 
 	.msg-item {
@@ -713,14 +627,12 @@ function formatTime(ts) {
 		color: #8fb6d6;
 	}
 
-	.empty,
 	.login-tip {
 		padding: 160rpx 0 60rpx;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 
-		.empty-text,
 		.login-tip-text {
 			margin-top: 24rpx;
 			font-size: 26rpx;

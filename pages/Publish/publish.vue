@@ -57,6 +57,7 @@
 
 <script setup lang="ts">
 	import { ref, computed } from 'vue';
+	import { onLoad, onUnload } from '@dcloudio/uni-app';
 	import { requireLogin, getUserInfo } from '../../utils/auth';
 
 	const croppedPath = ref(''); // 裁剪后的本地临时路径
@@ -64,8 +65,36 @@
 	const cropHeight = ref(0); // 裁剪输出高
 	const description = ref('');
 	const publishing = ref(false);
+	// 审核结果订阅模板 ID：页面加载时预取，保证点击发布时能同步发起授权
+	const auditTmplId = ref('');
+	// 发布成功后的跳转定时器：页面卸载时清理，避免在已销毁的页面上执行跳转
+	let navigateTimer: ReturnType<typeof setTimeout> | null = null;
 	const tagOptions = ['风景', '人物', '动漫', '萌宠', '美食', '其他'];
 	const selectedTags = ref<string[]>([]);
+
+	onLoad(() => {
+		loadAuditTemplate();
+	});
+
+	onUnload(() => {
+		if (navigateTimer) {
+			clearTimeout(navigateTimer);
+			navigateTimer = null;
+		}
+	});
+
+	async function loadAuditTemplate() {
+		// #ifdef MP-WEIXIN
+		try {
+			const res = await uniCloud.callFunction({
+				name: 'wallpaper-action',
+				data: { action: 'subscribeInfo' }
+			});
+			const id = res && res.result && res.result.auditTemplateId;
+			if (id) auditTmplId.value = id;
+		} catch (e) {}
+		// #endif
+	}
 
 	const canSubmit = computed(() => !!croppedPath.value);
 
@@ -150,10 +179,16 @@
 			return uni.showToast({ title: '登录信息异常，请重新登录', icon: 'none' });
 		}
 
+		// 审核结果订阅授权：必须在用户点击手势内同步发起，不能等上传/云函数返回后再请求
+		requestAuditSubscribe();
+
+		// 记录本次上传的云存储文件，发布失败时清理，避免产生孤儿文件
+		let uploadedFileId = '';
+
 		publishing.value = true;
 		uni.showLoading({ title: '发布中', mask: true });
 		try {
-			// 0. 兜底：真机调试通道单文件上限 2MB，超限直接拦截并给出明确提示
+			// 0. 兜底：云存储单文件上限约 2MB，超限直接拦截并给出明确提示
 			const fileInfo = await new Promise((resolve) => {
 				uni.getFileInfo({
 					filePath: croppedPath.value,
@@ -165,7 +200,7 @@
 				uni.hideLoading();
 				return uni.showModal({
 					title: '图片过大',
-					content: '当前图片约 ' + (fileInfo.size / 1024 / 1024).toFixed(1) + 'MB，真机调试环境上限 2MB，请改用「预览」扫码上传，或重新裁剪一张画面更简单的图。',
+					content: '当前图片约 ' + (fileInfo.size / 1024 / 1024).toFixed(1) + 'MB，已超过 1.9MB 上限，请压缩或重新裁剪后重试。',
 					showCancel: false
 				});
 			}
@@ -179,6 +214,7 @@
 			if (!upRes || !upRes.fileID) {
 				throw new Error('图片上传失败');
 			}
+			uploadedFileId = upRes.fileID;
 
 			// 2. 调用云函数落库（已包含封禁拦截、文本安全检测、author_id 归属强制写入）
 			const desc = description.value.trim();
@@ -195,6 +231,8 @@
 			});
 			const pr = pubRes && pubRes.result;
 			if (pr && pr.errCode !== 0) {
+				// 落库失败：删除刚上传的图片，避免云存储残留
+				await cleanupUploadedFile(uploadedFileId);
 				uni.hideLoading();
 				uni.showToast({ title: pr.errMsg || '发布失败', icon: 'none' });
 				return;
@@ -209,12 +247,13 @@
 				cropHeight.value = 0;
 				description.value = '';
 				selectedTags.value = [];
-				// 尝试请求审核结果通知的微信订阅授权（静默，失败不影响主流程）
-				requestAuditSubscribe();
-				setTimeout(() => {
+				navigateTimer = setTimeout(() => {
+					navigateTimer = null;
 					uni.switchTab({ url: '/pages/Home/index' });
 				}, 1500);
 		} catch (e) {
+			// 任意环节失败都清理已上传文件
+			await cleanupUploadedFile(uploadedFileId);
 			uni.showToast({ title: (e && e.message) || '发布失败，请重试', icon: 'none' });
 		} finally {
 			publishing.value = false;
@@ -222,34 +261,38 @@
 		}
 	}
 
-	/**
-	 * 发布成功后请求「审核结果通知」微信订阅授权。
-	 * 先从云函数取 auditTemplateId（未配置则跳过），授权成功则攒一次下发额度。
-	 * 全程静默：拒绝/失败均不提示、不影响发布主流程。
-	 */
-	async function requestAuditSubscribe() {
-		// #ifdef MP-WEIXIN
+	// 删除本次发布已上传的云存储文件（fileID 为空时跳过）
+	async function cleanupUploadedFile(fileId: string) {
+		if (!fileId) return;
 		try {
-			const infoRes = await uniCloud.callFunction({
-				name: 'wallpaper-action',
-				data: { action: 'subscribeInfo' }
-			});
-			const auditTemplateId = infoRes && infoRes.result && infoRes.result.auditTemplateId;
-			if (!auditTemplateId) return; // 服务端未配置审核模板，跳过
-			uni.requestSubscribeMessage({
-				tmplIds: [auditTemplateId],
-				success: (res) => {
-					// accept 才攒额度
-					if (res && res[auditTemplateId] === 'accept') {
-						uniCloud.callFunction({
-							name: 'wallpaper-action',
-							data: { action: 'saveSubscribe', tmplType: 'audit' }
-						});
-					}
-				},
-				fail: () => {}
-			});
-		} catch (e) {}
+			await uniCloud.deleteFile({ fileList: [fileId] });
+		} catch (e) {
+			console.error('[publish] 清理云存储文件失败', e);
+		}
+	}
+
+	/**
+	 * 请求「审核结果通知」微信订阅授权。
+	 * 模板 ID 已在页面加载时预取，这里只做同步调用，确保落在用户点击手势内。
+	 * 全程静默：未配置/拒绝/失败均不提示、不影响发布主流程。
+	 */
+	function requestAuditSubscribe() {
+		// #ifdef MP-WEIXIN
+		const tmplId = auditTmplId.value;
+		if (!tmplId) return; // 服务端未配置审核模板，跳过
+		uni.requestSubscribeMessage({
+			tmplIds: [tmplId],
+			success: (res) => {
+				// accept 才攒额度
+				if (res && res[tmplId] === 'accept') {
+					uniCloud.callFunction({
+						name: 'wallpaper-action',
+						data: { action: 'saveSubscribe', tmplType: 'audit' }
+					});
+				}
+			},
+			fail: () => {}
+		});
 		// #endif
 	}
 </script>

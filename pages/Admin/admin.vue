@@ -26,17 +26,7 @@
 
 		<!-- ================= 照片审核 ================= -->
 		<template v-if="mode === 'photo'">
-			<view class="tabs">
-				<view
-					v-for="tab in tabs"
-					:key="tab.value"
-					class="tab"
-					:class="{ active: activeStatus === tab.value }"
-					@click="switchTab(tab.value)"
-				>
-					{{ tab.label }}
-				</view>
-			</view>
+			<filter-tabs :tabs="tabs" :model-value="activeStatus" @change="switchTab" />
 
 			<!-- 批量管理条（待审核 Tab 可用） -->
 			<view v-if="activeStatus === 0" class="batch-bar">
@@ -52,10 +42,11 @@
 			<view class="feed" :class="{ 'feed-loading': skVisible }">
 				<view class="list">
 					<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-					<view v-if="!skVisible && !list.length" class="empty">
-						<uni-icons type="checkbox-filled" size="46" color="#bcd0e2"></uni-icons>
-						<text class="empty-text">{{ activeStatus === 0 ? '太棒了，没有待审核的照片' : '暂无数据' }}</text>
-					</view>
+					<empty-state
+						v-if="!skVisible && !list.length"
+						icon="checkbox-filled"
+						:text="activeStatus === 0 ? '太棒了，没有待审核的照片' : '暂无数据'"
+					/>
 
 					<view
 						class="card reveal-blk"
@@ -130,25 +121,16 @@
 
 		<!-- ================= 举报处理 ================= -->
 		<template v-else-if="mode === 'report'">
-			<view class="tabs">
-				<view
-					v-for="tab in reportTabs"
-					:key="tab.value"
-					class="tab"
-					:class="{ active: reportStatus === tab.value }"
-					@click="switchReportTab(tab.value)"
-				>
-					{{ tab.label }}
-				</view>
-			</view>
+			<filter-tabs :tabs="reportTabs" :model-value="reportStatus" @change="switchReportTab" />
 
 			<view class="feed" :class="{ 'feed-loading': skVisible }">
 				<view class="list">
 					<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-					<view v-if="!skVisible && !reportList.length" class="empty">
-						<uni-icons type="flag-filled" size="46" color="#bcd0e2"></uni-icons>
-						<text class="empty-text">{{ reportStatus === 0 ? '没有待处理的举报' : '暂无数据' }}</text>
-					</view>
+					<empty-state
+						v-if="!skVisible && !reportList.length"
+						icon="flag-filled"
+						:text="reportStatus === 0 ? '没有待处理的举报' : '暂无数据'"
+					/>
 
 					<view class="card reveal-blk" v-for="(item, index) in reportList" :key="item._id" :style="{ animationDelay: d(index, 0) }">
 						<view class="card-main">
@@ -209,10 +191,7 @@
 			<view class="feed" :class="{ 'feed-loading': skVisible }">
 				<view class="list">
 					<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-					<view v-if="!skVisible && !commentList.length" class="empty">
-						<uni-icons type="chatbubble-filled" size="46" color="#bcd0e2"></uni-icons>
-						<text class="empty-text">暂无评论</text>
-					</view>
+					<empty-state v-if="!skVisible && !commentList.length" icon="chatbubble-filled" text="暂无评论" />
 
 					<view class="card reveal-blk" v-for="(item, index) in commentList" :key="item._id" :style="{ animationDelay: d(index, 0) }">
 						<view class="comment-head reveal-blk" :style="{ animationDelay: d(index, 1) }">
@@ -264,10 +243,7 @@
 			<view class="feed" :class="{ 'feed-loading': skVisible }">
 				<view class="list">
 					<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-					<view v-if="!skVisible && !userList.length" class="empty">
-						<uni-icons type="person-filled" size="46" color="#bcd0e2"></uni-icons>
-						<text class="empty-text">没有找到用户</text>
-					</view>
+					<empty-state v-if="!skVisible && !userList.length" icon="person-filled" text="没有找到用户" />
 
 					<view class="card user-card reveal-blk" v-for="(item, index) in userList" :key="item._id" :style="{ animationDelay: d(index, 0) }">
 						<image v-if="item._avatarUrl" class="user-avatar reveal-blk" :style="{ animationDelay: d(index, 1) }" :src="item._avatarUrl" mode="aspectFill"></image>
@@ -357,6 +333,7 @@
 	import { onShow, onReachBottom } from '@dcloudio/uni-app';
 	import { isLoggedIn } from '../../utils/auth';
 	import { resolveFileUrls } from '../../utils/cloud-file';
+	import { formatDateTime as formatTime } from '../../utils/format-time';
 	import { useSkeleton } from '../../utils/skeleton';
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
@@ -820,12 +797,6 @@
 		});
 	}
 
-	function formatTime(ts: any): string {
-		if (!ts) return '';
-		const d = new Date(Number(ts));
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-	}
 </script>
 
 <style lang="scss">
@@ -879,42 +850,6 @@
 
 			&.active {
 				color: #2c98e7;
-			}
-		}
-	}
-
-	.tabs {
-		position: sticky;
-		top: 0;
-		z-index: 10;
-		display: flex;
-		background: #fff;
-		padding: 0 10rpx;
-		box-shadow: 0 2rpx 12rpx rgba(56, 151, 228, 0.06);
-
-		.tab {
-			flex: 1;
-			text-align: center;
-			padding: 26rpx 0;
-			font-size: 28rpx;
-			color: #6b7d8f;
-			position: relative;
-
-			&.active {
-				color: #2c98e7;
-				font-weight: bold;
-
-				&::after {
-					content: '';
-					position: absolute;
-					bottom: 8rpx;
-					left: 50%;
-					transform: translateX(-50%);
-					width: 48rpx;
-					height: 6rpx;
-					border-radius: 3rpx;
-					background: #2c98e7;
-				}
 			}
 		}
 	}
@@ -1436,19 +1371,6 @@
 		font-size: 24rpx;
 		color: #a7bfd3;
 		padding: 20rpx 0 40rpx;
-	}
-
-	.empty {
-		padding-top: 180rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-
-		.empty-text {
-			margin-top: 20rpx;
-			font-size: 28rpx;
-			color: #9bb4c9;
-		}
 	}
 
 	/* 弹窗 */

@@ -4,7 +4,7 @@
 		<!-- 顶部首行与微信胶囊同高，右侧预留胶囊宽度，避免「排行榜/标题」被胶囊遮挡 -->
 		<view class="header" :style="headerStyle">
 			<view class="header-row" :style="headerRowStyle">
-				<text class="title">十月初美人鉴赏ヾ(*´・ω・`*)</text>
+				<text class="title">十月初汉妆集ヾ(*´・ω・`*)</text>
 			</view>
 			<view class="datelogo">
 				<view class="date">
@@ -169,12 +169,12 @@
 				<text class="empty-sub">{{ emptySub }}</text>
 			</view>
 
-			<!-- 照片瀑布流：两列，按图片真实宽高比分配到较矮的列 -->
-			<view v-else-if="totalCount" class="wf">
-				<view class="wf-col" v-for="(col, ci) in columns" :key="ci">
+			<!-- 照片瀑布流：分流与列布局由 waterfall-list 组件处理 -->
+			<waterfall-list class="wf" v-else-if="totalCount" :source="list" :meta-height="124" :gap="20">
+				<template #default="{ item, index }">
 					<!-- 数据到达后：图片 → 标题 → 作者/点赞行，从上到下每块错开 60ms 浮现 -->
-					<view class="listBox" v-for="(item, index) in col" :key="item._id" @click="goDetail(item._id)">
-						<view class="photo reveal-blk" :style="{ height: item._ph + 'px', animationDelay: d(index, 0) }">
+					<view class="listBox" @click="goDetail(item._id)">
+						<view class="photo reveal-blk" :style="{ height: item._h + 'rpx', animationDelay: d(index, 0) }">
 							<image
 								:src="item._imgUrl"
 								mode="aspectFill"
@@ -207,8 +207,8 @@
 						</view>
 						</view>
 					</view>
-				</view>
-			</view>
+				</template>
+			</waterfall-list>
 
 			<view v-if="totalCount" class="loadmore">{{ loadmoreText }}</view>
 
@@ -255,12 +255,13 @@
 	// 列表缓存有效期：onShow 时距上次加载不足 30s 则直接用缓存，避免每次切 tab 全量重刷
 	const CACHE_TTL = 30 * 1000;
 
-	// 瀑布流两列数据 + 各列累计高度（px，非响应式，仅用于分流决策）
-	const columns = ref<any[][]>([[], []]);
-	const colHeights = [0, 0];
+	// 瀑布流数据源（平铺数组，两列分流由 waterfall-list 组件处理）
+	const list = ref<any[]>([]);
 	const loading = ref(false);
 	const hasMore = ref(false);
 	const lastLoadAt = ref(0);
+	// 请求序号：reload 时递增，响应回来时校验，丢弃仍在飞行中的旧筛选结果
+	let reqId = 0;
 
 	// 骨架屏：首屏加载中显示，数据到达后淡出并与内容错位浮现交错
 	const { skVisible, skFading, skDone } = useSkeleton();
@@ -269,22 +270,10 @@
 	function d(index: number, step: number): string {
 		return Math.min(index, 5) * 60 + step * 60 + 'ms';
 	}
-	const totalCount = computed(() => columns.value[0].length + columns.value[1].length);
+	const totalCount = computed(() => list.value.length);
 
 	// 骨架屏每列占位高度（rpx，错落模拟瀑布流）
 	const skeletonHeights = [[380, 280, 340], [260, 400, 300]];
-
-	// 瀑布流几何（px）：列宽 =（屏宽 - 左右padding 20rpx×2 - 列间距 20rpx）/2
-	let COL_W = 170;
-	let META_H = 62; // 卡片文字区高：描述单行 + 作者/计数行 + 上下 padding
-	let CARD_GAP = 10;
-	try {
-		const winW = uni.getSystemInfoSync().windowWidth;
-		const rpx = winW / 750;
-		COL_W = (winW - 20 * rpx * 2 - 20 * rpx) / 2;
-		META_H = 124 * rpx;
-		CARD_GAP = 20 * rpx;
-	} catch (e) {}
 
 	// 标签筛选（与云函数 publish 白名单一致）
 	const tagList = ['全部', '风景', '人物', '动漫', '萌宠', '美食', '其他'];
@@ -442,6 +431,20 @@
 		}
 	}
 
+	// 手动解析 YYYY-MM-DD：iOS 不支持 new Date('YYYY-MM-DD HH:mm:ss') 这种格式
+	function parseDateStr(str: string, endOfDay: boolean): number {
+		const parts = str.split('-').map((n) => Number(n));
+		if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return 0;
+		return new Date(
+			parts[0],
+			parts[1] - 1,
+			parts[2],
+			endOfDay ? 23 : 0,
+			endOfDay ? 59 : 0,
+			endOfDay ? 59 : 0
+		).getTime();
+	}
+
 	function applyFilter() {
 		let dateStart = 0;
 		let dateEnd = 0;
@@ -451,8 +454,8 @@
 				uni.showToast({ title: '请选择开始或结束日期', icon: 'none' });
 				return;
 			}
-			dateStart = fDateStart.value ? new Date(fDateStart.value + ' 00:00:00').getTime() : 0;
-			dateEnd = fDateEnd.value ? new Date(fDateEnd.value + ' 23:59:59').getTime() : 0;
+			dateStart = fDateStart.value ? parseDateStr(fDateStart.value, false) : 0;
+			dateEnd = fDateEnd.value ? parseDateStr(fDateEnd.value, true) : 0;
 			if (dateStart && dateEnd && dateStart > dateEnd) {
 				uni.showToast({ title: '开始日期不能晚于结束日期', icon: 'none' });
 				return;
@@ -567,13 +570,11 @@
 
 	// 详情页点赞/评论变更 → 原地同步瀑布流内对应照片数量
 	function onStatsChanged(e: { id: string; likeNum?: number; commentNum?: number }) {
-		columns.value.forEach((col: any[]) => {
-			col.forEach((item) => {
-				if (item._id !== e.id) return;
-				if (!item.info) item.info = {};
-				if (typeof e.likeNum === 'number') item.info.likeNum = e.likeNum;
-				if (typeof e.commentNum === 'number') item.info.commentNum = e.commentNum;
-			});
+		list.value.forEach((item) => {
+			if (item._id !== e.id) return;
+			if (!item.info) item.info = {};
+			if (typeof e.likeNum === 'number') item.info.likeNum = e.likeNum;
+			if (typeof e.commentNum === 'number') item.info.commentNum = e.commentNum;
 		});
 	}
 
@@ -600,16 +601,18 @@
 	}
 
 	async function reload() {
-		columns.value = [[], []];
-		colHeights[0] = 0;
-		colHeights[1] = 0;
+		reqId++;
+		list.value = [];
 		hasMore.value = false;
 		seenIds.value = [];
-		await loadMore();
+		await loadMore(reqId);
 	}
 
-	async function loadMore() {
-		if (loading.value) return;
+	async function loadMore(forceSeq?: number) {
+		const seq = typeof forceSeq === 'number' ? forceSeq : reqId;
+		if (seq !== reqId) return;
+		// 分页请求需等上一页结束；reload 触发的强制请求可越过该守卫，由序号丢弃旧结果
+		if (loading.value && typeof forceSeq !== 'number') return;
 		loading.value = true;
 		try {
 			if (searchMode.value) {
@@ -618,12 +621,14 @@
 					name: 'wallpaper-action',
 					data: { action: 'search', keyword: searchKeyword.value, skip: totalCount.value }
 				});
+				if (seq !== reqId) return;
 				const r = res.result || {};
 				if (r.errCode) {
 					uni.showToast({ title: r.errMsg || '搜索失败', icon: 'none' });
 					return;
 				}
-				await appendRecords(r.list || []);
+				await appendRecords(r.list || [], seq);
+				if (seq !== reqId) return;
 				hasMore.value = !!r.hasMore;
 			} else {
 				// 信息流走云函数 feed：统一支持排序（new/hot/random）与组合筛选
@@ -649,6 +654,7 @@
 				if (a.order === 'random') data.excludeIds = seenIds.value;
 
 				const res = await uniCloud.callFunction({ name: 'wallpaper-action', data });
+				if (seq !== reqId) return;
 				const r = res.result || {};
 				if (r.errCode) {
 					uni.showToast({ title: r.errMsg || '加载失败', icon: 'none' });
@@ -660,49 +666,51 @@
 						.concat((r.list || []).map((x) => x._id))
 						.slice(-300);
 				}
-				await appendRecords(r.list || []);
+				await appendRecords(r.list || [], seq);
+				if (seq !== reqId) return;
 				hasMore.value = !!r.hasMore;
 			}
 			lastLoadAt.value = Date.now();
 		} catch (e) {
+			if (seq !== reqId) return;
 			console.error('加载照片列表失败', e);
 			uni.showToast({ title: '加载失败，请下拉重试', icon: 'none' });
 		} finally {
-			loading.value = false;
-			skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			if (seq === reqId) {
+				loading.value = false;
+				skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			}
 		}
 	}
 
-	// 照片与作者头像都是 cloud:// fileID，批量换取临时 https 地址后，
-	// 按图片真实宽高比算出照片高度，逐条塞进当前较矮的列（瀑布流分流）
-	async function appendRecords(records: any[]) {
+	// 照片与作者头像都是 cloud:// fileID，批量换取临时 https 地址后写入平铺列表，
+	// 两列分流与展示高度由 waterfall-list 组件计算
+	async function appendRecords(records: any[], seq?: number) {
+		// 按 _id 去重：分页期间有新照片插入时，最新/最热排序会出现重复卡片
+		const existing = new Set<string>();
+		list.value.forEach((c) => existing.add(c._id));
+		records = records.filter((r) => r._id && !existing.has(r._id));
+
 		const fileIDs = [];
 		records.forEach((r) => {
 			if (r.image) fileIDs.push(r.image);
 			if (r.author && r.author.avatar) fileIDs.push(r.author.avatar);
 		});
 		const urlMap = await resolveFileUrls(fileIDs);
+		// 换链接期间若已触发刷新，丢弃这批过期数据
+		if (typeof seq === 'number' && seq !== reqId) return;
 
-		records.forEach((r) => {
-			// 新数据有 width/height；历史数据统一按旧裁剪规格 375:400 兜底
-			const ratio = r.width > 0 && r.height > 0 ? r.width / r.height : 375 / 400;
-			// 极端比例兜底：照片高度限制在列宽的 0.75~2.2 倍，避免超宽全景塌成一条
-			let ph = COL_W / ratio;
-			ph = Math.min(Math.max(ph, COL_W * 0.75), COL_W * 2.2);
-
+		const cards = records.map((r) => {
 			const imgUrl = urlMap[r.image] || '';
-			const card = {
+			return {
 				...r,
 				_imgUrl: imgUrl,
 				_avatarUrl: (r.author && urlMap[r.author.avatar]) || '',
-				_ph: Math.round(ph),
 				// 地址换取失败时不展示蒙版（无 load 事件，避免蒙版永久停留）
 				_imgLoaded: !imgUrl
 			};
-			const ci = colHeights[0] <= colHeights[1] ? 0 : 1;
-			columns.value[ci].push(card);
-			colHeights[ci] += ph + META_H + CARD_GAP;
 		});
+		list.value = list.value.concat(cards);
 	}
 
 	// 图片加载完成/失败：移除加载蒙版让整图淡入（失败时只留灰色占位底，不再闪渐进渲染）
@@ -1183,7 +1191,6 @@
 		}
 
 		.listBox {
-			margin-bottom: 20rpx;
 			background: #ffffff;
 			border-radius: 20rpx;
 			overflow: hidden;
@@ -1302,6 +1309,10 @@
 
 	/* ===== 骨架屏 ===== */
 	/* 灰块底与斜向扫光由全局 .sk / .sk-shine 提供，这里只定形状 */
+	.sk-layer .listBox {
+		margin-bottom: 20rpx;
+	}
+
 	.sk-photo {
 		width: 100%;
 		// 高度由骨架屏内联 style 给定（错落模拟瀑布流）

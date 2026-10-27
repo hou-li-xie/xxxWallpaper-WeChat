@@ -17,26 +17,17 @@
 		<!-- 照片瀑布流：骨架层绝对定位覆盖其上，加载期给容器撑高避免塌陷跳动 -->
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
 			<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-			<view v-if="!skVisible && !list.length" class="empty">
-				<uni-icons type="image" size="46" color="#bcd0e2"></uni-icons>
-				<text class="empty-text">TA 还没有发布照片</text>
-			</view>
+			<empty-state v-if="!skVisible && !list.length" icon="image" text="TA 还没有发布照片" :top="140" />
 
-			<!-- 照片瀑布流：两列，按真实宽高比分配高度 -->
-			<view class="masonry">
-				<view class="m-col" v-for="(col, ci) in [leftCol, rightCol]" :key="ci">
-					<view
-						class="m-item reveal-blk"
-						v-for="(item, index) in col"
-						:key="item._id"
-						:style="{ animationDelay: d(index * 2 + ci, 0) }"
-						@click="goDetail(item._id)"
-					>
+			<!-- 照片瀑布流：分流与列布局由 waterfall-list 组件处理 -->
+			<waterfall-list class="masonry" :source="list" :meta-height="0" :gap="10">
+				<template #default="{ item }">
+					<view class="m-item" @click="goDetail(item._id)">
 						<image :src="item._imgUrl" mode="aspectFill" lazy-load :style="{ height: item._h + 'rpx' }"></image>
-						<view v-if="item.description" class="m-label reveal-blk" :style="{ animationDelay: d(index * 2 + ci, 1) }">{{ item.description }}</view>
+						<view v-if="item.description" class="m-label">{{ item.description }}</view>
 					</view>
-				</view>
-			</view>
+				</template>
+			</waterfall-list>
 
 			<view v-if="list.length" class="loadmore">{{ loadmoreText }}</view>
 
@@ -73,40 +64,6 @@
 	// 骨架屏：首屏加载中显示，数据到达后淡出并与内容错位浮现交错
 	const { skVisible, skFading, skDone } = useSkeleton();
 
-	// 内容块依次浮现的延迟：卡片按序号错开（前 5 张封顶），卡片内各块再按 60ms 递增
-	function d(index: number, step: number): string {
-		return Math.min(index, 5) * 60 + step * 60 + 'ms';
-	}
-
-	// 瀑布流两列（与首页一致的分配策略：按真实宽高比算高度，放入当前较矮列）
-	const COL_WIDTH = 350; // (750 - 20*2 padding - 10 gap) / 2
-	const leftCol = ref<any[]>([]);
-	const rightCol = ref<any[]>([]);
-	let leftH = 0;
-	let rightH = 0;
-
-	function calcH(item: any): number {
-		const w = Number(item.width) || 375;
-		const h = Number(item.height) || 400;
-		let vh = COL_WIDTH * (h / w);
-		// 钳制：极端全景/长图不至于塌成一条或顶穿屏幕
-		vh = Math.max(COL_WIDTH * 0.75, Math.min(COL_WIDTH * 2.2, vh));
-		return Math.round(vh);
-	}
-
-	function assignItems(items: any[]) {
-		items.forEach((item) => {
-			item._h = calcH(item);
-			if (leftH <= rightH) {
-				leftCol.value.push(item);
-				leftH += item._h;
-			} else {
-				rightCol.value.push(item);
-				rightH += item._h;
-			}
-		});
-	}
-
 	const loadmoreText = computed(() => {
 		if (loading.value) return '加载中…';
 		return hasMore.value ? '上拉加载更多' : '没有更多了';
@@ -139,10 +96,6 @@
 
 	async function reload() {
 		list.value = [];
-		leftCol.value = [];
-		rightCol.value = [];
-		leftH = 0;
-		rightH = 0;
 		hasMore.value = false;
 		user.value = { _id: '', nickname: '', avatar: '' };
 		avatarUrl.value = '';
@@ -180,7 +133,6 @@
 				_imgUrl: urlMap[i.image] || ''
 			}));
 			list.value = list.value.concat(mapped);
-			assignItems(mapped);
 			hasMore.value = !!r.hasMore;
 		} catch (e) {
 			console.error('用户主页加载失败', e);
@@ -262,7 +214,6 @@
 		display: flex;
 		align-items: flex-start;
 		padding: 20rpx;
-		gap: 10rpx;
 
 		.m-col {
 			width: 350rpx;
@@ -298,6 +249,11 @@
 		}
 	}
 
+	/* 骨架屏保持两列 10rpx 间距（真实列表间距由 waterfall-list 负责） */
+	.sk-layer .masonry {
+		gap: 10rpx;
+	}
+
 	.loadmore {
 		padding: 20rpx 0 40rpx;
 		text-align: center;
@@ -305,16 +261,4 @@
 		color: #a7bfd3;
 	}
 
-	.empty {
-		padding-top: 140rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-
-		.empty-text {
-			margin-top: 20rpx;
-			font-size: 28rpx;
-			color: #9bb4c9;
-		}
-	}
 </style>

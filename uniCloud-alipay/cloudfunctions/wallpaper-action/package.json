@@ -1,7 +1,9 @@
 {
-	"name": "wallpaper-action",
-	"dependencies": {
-		"uni-id-common": "file:../common/uni-id-common"
-	},
-	"main": "index.js"
+  "name": "wallpaper-action",
+  "dependencies": {
+    "uni-config-center": "file:../common/uni-config-center",
+    "uni-id-common": "file:../common/uni-id-common"
+  },
+  "main": "index.js",
+  "extensions": {}
 }

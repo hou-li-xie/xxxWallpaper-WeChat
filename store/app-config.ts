@@ -29,7 +29,8 @@ export const useAppConfigStore = defineStore('appConfig', {
 				.get()
 				.then((res: any) => {
 					const doc = res.result && res.result.data && res.result.data[0];
-					this.hideContent = !!(doc && doc.hide_content);
+					// 表为空（无记录）时同样按「隐藏」兜底，避免审核期内容意外展示
+					this.hideContent = doc ? !!doc.hide_content : true;
 				})
 				.catch(() => {
 					// 读取失败保持默认「隐藏」，与审核期安全状态一致

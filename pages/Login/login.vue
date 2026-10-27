@@ -106,6 +106,9 @@
 
 		loading.value = true;
 		uni.showLoading({ title: '登录中', mask: true });
+		// 记录已上传的头像文件：登录失败时清理，避免云存储残留孤儿文件
+		let uploadedAvatarId = '';
+		let loginOk = false;
 		try {
 			// 1. 获取新鲜的微信登录 code（code 有效期短，提交时再取）
 			const loginRes = await uni.login({ provider: 'weixin' });
@@ -124,6 +127,7 @@
 			if (!upRes || !upRes.fileID) {
 				throw new Error('头像上传失败');
 			}
+			uploadedAvatarId = upRes.fileID;
 
 			// 3. 携带 code + 昵称 + 头像 fileID 调用登录云函数
 			const fnRes = await uniCloud.callFunction({
@@ -138,6 +142,8 @@
 			if (!result || result.errCode !== 0) {
 				throw new Error((result && result.errMsg) || '登录失败');
 			}
+			// 云函数已把头像写入用户记录，之后不再清理
+			loginOk = true;
 
 			// 4. 持久化登录态并同步全局 store（store 内部会写 storage 并广播 loginSuccess）
 			userStore.login({
@@ -149,10 +155,24 @@
 			uni.showToast({ title: '登录成功', icon: 'success' });
 			setTimeout(navigateAfterLogin, 400);
 		} catch (e) {
+			// 登录未成功：头像未被用户记录引用，直接删除
+			if (uploadedAvatarId && !loginOk) {
+				await cleanupUploadedAvatar(uploadedAvatarId);
+			}
 			uni.showToast({ title: (e && e.message) || '登录失败', icon: 'none' });
 		} finally {
 			loading.value = false;
 			uni.hideLoading();
+		}
+	}
+
+	// 删除登录失败时已上传的头像文件（fileID 为空时跳过）
+	async function cleanupUploadedAvatar(fileId: string) {
+		if (!fileId) return;
+		try {
+			await uniCloud.deleteFile({ fileList: [fileId] });
+		} catch (e) {
+			console.error('[login] 清理头像文件失败', e);
 		}
 	}
 

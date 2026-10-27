@@ -1,121 +1,44 @@
 'use strict';
-const createConfig = require('uni-config-center');
-const uniIdCommon = require('uni-id-common');
+const { weixinLogin } = require('./modules/weixin');
+const { guestLogin } = require('./modules/guest');
+const { univerifyLogin } = require('./modules/univerify');
+const { savePushCid } = require('./modules/push');
+const { getMigrateCode, resetMigrateCode, migrateByCode } = require('./modules/migrate');
 
 /**
- * 微信小程序登录云函数
+ * 登录云函数（多端统一入口）
  *
- * 入参 event:
- * @param {string} code     uni.login() 返回的临时登录凭证
- * @param {string} nickname 用户填写/选择的微信昵称
- * @param {string} avatar   头像已上传到云存储后返回的 fileID
+ * event.type 分发：
+ *   weixin（默认） 微信小程序登录：code 换 openid -> 查/建用户 -> 签发 token
+ *   guest         App 游客式登录：昵称 + 头像建档，凭本地持久 guest_id 识别老用户
+ *                 （头像统一由客户端上传云存储，传 cloud:// fileID；内置头像也经客户端转换路径后上传）
+ *   univerify     App 本机号码一键登录（已弃用，保留代码备用）
+ *   savePushCid   App 端保存 uniPush 客户端标识 push_cid（需携带登录态 token）
+ *   getMigrateCode / resetMigrateCode / migrateByCode  账号迁移码（换机/重装恢复）
  *
- * 流程：code 换 openid -> 查询/创建用户 -> uni-id-common 签发 token
+ * 微信配置在 uni-config-center/user-login/config.json（appid/appsecret）
  */
+async function handleLogin(event, context) {
+	const type = String(event.type || 'weixin');
+	if (type === 'guest') return guestLogin(event, context);
+	if (type === 'univerify') return univerifyLogin(event, context);
+	if (type === 'savePushCid') return savePushCid(event, context);
+	if (type === 'getMigrateCode') return getMigrateCode(event, context);
+	if (type === 'resetMigrateCode') return resetMigrateCode(event, context);
+	if (type === 'migrateByCode') return migrateByCode(event, context);
+	return weixinLogin(event, context);
+}
+
+// 兜底捕获未处理异常，把真实错误信息与堆栈回传给客户端，便于定位
 exports.main = async (event, context) => {
-	const { code, nickname, avatar } = event;
-
-	// 1. 参数校验
-	if (!code || !nickname || !avatar) {
-		return { errCode: 'PARAM_ILLEGAL', errMsg: '登录参数不完整（code/nickname/avatar）' };
-	}
-	const safeNickname = String(nickname).trim().slice(0, 20);
-	if (!safeNickname) {
-		return { errCode: 'NICKNAME_EMPTY', errMsg: '请填写昵称' };
-	}
-
-	// 2. 读取微信小程序配置（uni-config-center/user-login/config.json）
-	const wxConfig = createConfig({ pluginId: 'user-login' }).config();
-	if (!wxConfig.appid || !wxConfig.appsecret || String(wxConfig.appsecret).indexOf('请填写') === 0) {
+	try {
+		return await handleLogin(event, context);
+	} catch (e) {
+		console.error('[user-login] crash:', e && (e.stack || e.errMsg || e.message || e));
 		return {
-			errCode: 'WX_CONFIG_MISSING',
-			errMsg: '请先在 uni-config-center/user-login/config.json 中配置微信 appid 与 appsecret'
+			errCode: 'INTERNAL_ERROR',
+			errMsg: '[user-login] ' + (e && (e.message || e.errMsg || e.errCode || JSON.stringify(e))),
+			stack: (e && e.stack) || ''
 		};
 	}
-
-	// 3. 用 code 请求微信接口换取 openid
-	let openid;
-	try {
-		const httpRes = await uniCloud.httpclient.request(
-			'https://api.weixin.qq.com/sns/jscode2session',
-			{
-				method: 'GET',
-				data: {
-					appid: wxConfig.appid,
-					secret: wxConfig.appsecret,
-					js_code: code,
-					grant_type: 'authorization_code'
-				},
-				dataType: 'json',
-				timeout: 10000
-			}
-		);
-		const body = httpRes && httpRes.data;
-		if (!body || !body.openid) {
-			return {
-				errCode: 'WX_CODE_INVALID',
-				errMsg: (body && body.errmsg) || '微信登录凭证校验失败',
-				raw: body || null
-			};
-		}
-		openid = body.openid;
-	} catch (e) {
-		return { errCode: 'WX_REQUEST_FAIL', errMsg: '请求微信服务器失败：' + (e && e.message) };
-	}
-
-	// 4. 按 openid 查询用户，不存在则创建，存在则更新头像昵称
-	const db = uniCloud.database();
-	const userCol = db.collection('uni-id-users');
-	const now = Date.now();
-	let uid;
-
-	const existed = await userCol.where({ wx_openid: openid }).limit(1).get();
-	let isAdmin = 0;
-	if (existed.data && existed.data.length) {
-		uid = existed.data[0]._id;
-		isAdmin = existed.data[0].is_admin || 0;
-		await userCol.doc(uid).update({
-			nickname: safeNickname,
-			avatar,
-			last_login_date: now
-		});
-	} else {
-		const addRes = await userCol.add({
-			wx_openid: openid,
-			nickname: safeNickname,
-			avatar,
-			register_date: now,
-			last_login_date: now,
-			status: 0,
-			is_admin: 0
-		});
-		uid = addRes.id;
-	}
-
-	// 5. 用 uni-id-common 签发 token（前端存入 uni_id_token，clientDB 会自动携带）
-	const uniIdCommonInstance = uniIdCommon.createInstance({
-		clientInfo: (context && context.clientInfo) || {}
-	});
-	const tokenRes = await uniIdCommonInstance.createToken({
-		uid,
-		role: [],
-		permission: []
-	});
-	if (tokenRes.errCode) {
-		return tokenRes;
-	}
-
-	return {
-		errCode: 0,
-		errMsg: '登录成功',
-		uid,
-		token: tokenRes.token,
-		tokenExpired: tokenRes.tokenExpired,
-		userInfo: {
-			_id: uid,
-			nickname: safeNickname,
-			avatar,
-			is_admin: isAdmin
-		}
-	};
 };

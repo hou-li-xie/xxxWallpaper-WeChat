@@ -231,6 +231,7 @@ import { ref, computed, onUnmounted } from 'vue';
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app';
 import { requireLogin } from '../../utils/auth';
 import { resolveFileUrls } from '../../utils/cloud-file';
+import { formatTime, formatDate } from '../../utils/format-time';
 import { useUserStore } from '../../store/user';
 import { storeToRefs } from 'pinia';
 import { useAppConfigStore } from '../../store/app-config';
@@ -271,11 +272,16 @@ const favorited = ref(false);
 const viewCount = ref(0);
 const relatedList = ref<any[]>([]);
 const VIEW_TTL = 10 * 60 * 1000; // 同一照片 10 分钟内只计一次浏览
+const VIEW_MAP_KEY = 'viewed_map_v1'; // 所有照片共用一份浏览记录，避免每张照片一个 storage key
+const VIEW_MAP_MAX = 200; // 最多保留 200 条，按最近浏览时间裁剪
 const draft = ref('');
 const sending = ref(false);
 const loading = ref(false);
+const liking = ref(false); // 点赞独立 loading，避免评论加载中无法点赞
+const favoriting = ref(false); // 收藏防重复点击
 const hasMore = ref(false);
-const skip = ref(0);
+// 评论分页游标：按服务端已拉取的顶级评论条数推进，本地增删时同步修正
+let rawSkip = 0;
 const safeBottom = ref(0);
 // 回复目标：null=发顶级评论；否则 { type:'comment'|'reply', parentId, replyId, name }
 // 显式记录目标类型，不靠扫描 replies 推断（避免 commentId/replyId 混用误判）
@@ -287,6 +293,18 @@ const expanded = ref<Record<string, boolean>>({});
 const myUid = computed<string>(() => (userInfo.value && userInfo.value._id) || '');
 // 微信一次性订阅消息模板ID（发评论点击链路中顺带请求授权，累积可接收条数）
 const subTmplId = ref('');
+
+// 未登录用户在登录页登录成功后，本页（仍留在路由栈中）刷新点赞态
+// 监听与解绑必须在 setup 同步阶段注册，放在 onLoad 回调里会导致 onUnmounted 无法生效
+function onLoginSuccess() {
+	rawSkip = 0;
+	loadDetail();
+	if (!hideComments.value) loadComments();
+}
+uni.$on('loginSuccess', onLoginSuccess);
+onUnmounted(() => {
+	uni.$off('loginSuccess', onLoginSuccess);
+});
 
 onLoad((options: any) => {
 	if (options && options.id) {
@@ -304,17 +322,6 @@ onLoad((options: any) => {
 			}
 		});
 	}
-
-	// 未登录用户在登录页登录成功后，本页（仍留在路由栈中）刷新点赞态
-	const onLoginSuccess = () => {
-		skip.value = 0;
-		loadDetail();
-		if (!hideComments.value) loadComments();
-	};
-	uni.$on('loginSuccess', onLoginSuccess);
-	onUnmounted(() => {
-		uni.$off('loginSuccess', onLoginSuccess);
-	});
 });
 
 // 页面分享：分享当前照片；图片地址未就绪时回退到 logo
@@ -406,13 +413,33 @@ async function loadDetail() {
 	}
 }
 
-// 浏览量 +1：本地按照片 10 分钟去重，避免来回切换刷数
+// 浏览量 +1：本地按照片 10 分钟去重；记录合并存在一个 map 中并定期裁剪
+function readViewMap(): Record<string, number> {
+	try {
+		const raw = uni.getStorageSync(VIEW_MAP_KEY);
+		return raw && typeof raw === 'object' ? raw : {};
+	} catch (e) {
+		return {};
+	}
+}
+
 async function recordView(wid: string) {
 	try {
-		const key = 'viewed_' + wid;
-		const last = Number(uni.getStorageSync(key)) || 0;
-		if (Date.now() - last < VIEW_TTL) return;
-		uni.setStorageSync(key, Date.now());
+		const now = Date.now();
+		const map = readViewMap();
+		const last = Number(map[wid]) || 0;
+		if (now - last < VIEW_TTL) return;
+		// 只保留最近 24 小时内的记录，并按时间倒序截断，防止 storage 无限增长
+		const valid = Object.entries(map)
+			.filter(([, t]) => now - Number(t) < 24 * 60 * 60 * 1000)
+			.sort((a, b) => Number(b[1]) - Number(a[1]))
+			.slice(0, VIEW_MAP_MAX - 1);
+		const next: Record<string, number> = {};
+		valid.forEach(([k, v]) => {
+			next[k] = Number(v);
+		});
+		next[wid] = now;
+		uni.setStorageSync(VIEW_MAP_KEY, next);
 		const res = await call('recordView');
 		if (res && res.errCode === 0 && res.viewCount) viewCount.value = res.viewCount;
 	} catch (e) {
@@ -444,20 +471,14 @@ function goRelated(rid: string) {
 	uni.redirectTo({ url: '/pages/Detail/detail?id=' + rid });
 }
 
-// 照片信息卡用发布日期（与评论区的 formatTime 区分开，评论恢复时互不影响）
-function formatDate(ts: any): string {
-	if (!ts) return '';
-	const d = new Date(ts);
-	const pad = (n: number): string => String(n).padStart(2, '0');
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+// 照片信息卡用发布日期（formatDate），评论区用相对时间（formatTime）
 
 // ============ 评论列表加载 ============
 async function loadComments(append: boolean = false) {
 	if (loading.value) return;
 	loading.value = true;
 	try {
-		const res = await call('comments', { skip: append ? skip.value : 0 });
+		const res = await call('comments', { skip: append ? rawSkip : 0 });
 		if (res.errCode === 0) {
 			// 批量换取评论者 + 回复者头像
 			const avatarIds = [];
@@ -474,8 +495,10 @@ async function loadComments(append: boolean = false) {
 				replies: (c.replies || []).map((r) => ({ ...r, _avatarUrl: mapAvatar(r.author) })),
 				_avatarUrl: mapAvatar(c.author)
 			}));
+			const rows = res.list || [];
 			comments.value = append ? comments.value.concat(mapped) : mapped;
-			skip.value = comments.value.length;
+			// 游标按服务端原始条数推进；本页新增/删除评论时另行修正
+			rawSkip = append ? rawSkip + rows.length : rows.length;
 			hasMore.value = !!res.hasMore;
 		}
 	} catch (e) {
@@ -492,7 +515,8 @@ function loginGuard() {
 
 async function onToggleLike() {
 	if (!loginGuard()) return;
-	if (loading.value) return;
+	if (liking.value) return; // 只拦点赞重复点击，不受评论加载影响
+	liking.value = true;
 
 	const prevLiked = liked.value;
 	const prevCount = likeCount.value;
@@ -515,6 +539,8 @@ async function onToggleLike() {
 		liked.value = prevLiked;
 		likeCount.value = prevCount;
 		uni.showToast({ title: '网络异常，请重试', icon: 'none' });
+	} finally {
+		liking.value = false;
 	}
 }
 
@@ -611,8 +637,9 @@ async function onSendComment() {
 			}
 			uni.showToast({ title: '回复成功', icon: 'success' });
 		} else {
-			// 顶级评论插到列表最前
+			// 顶级评论插到列表最前；服务端条数 +1，游标同步推进，避免下次分页跳过一条
 			comments.value.unshift({ ...nc, replies: [], _avatarUrl: avatarUrl });
+			rawSkip += 1;
 			uni.showToast({ title: '评论成功', icon: 'success' });
 		}
 		commentCount.value += 1;
@@ -670,9 +697,9 @@ async function doDelete(cid: string) {
 			}
 			commentCount.value = Math.max(0, commentCount.value - 1);
 		} else {
-			// 删除的是顶级评论：整条（含盖楼）移除
+			// 删除的是顶级评论：整条（含盖楼）移除；服务端条数 -1，游标同步回退
 			comments.value = comments.value.filter((c) => c._id !== cid);
-			skip.value = comments.value.length;
+			rawSkip = Math.max(0, rawSkip - 1);
 			commentCount.value = Math.max(0, commentCount.value - (1 + (res.removedReplies || 0)));
 		}
 		// 广播给列表页原地同步评论数
@@ -698,6 +725,8 @@ function previewHero() {
 /* ============ 收藏（乐观更新，失败回滚） ============ */
 async function onToggleFavorite() {
 	if (!loginGuard()) return;
+	if (favoriting.value) return;
+	favoriting.value = true;
 	const prev = favorited.value;
 	favorited.value = !prev;
 	try {
@@ -712,6 +741,8 @@ async function onToggleFavorite() {
 	} catch (e) {
 		favorited.value = prev;
 		uni.showToast({ title: '网络异常，请重试', icon: 'none' });
+	} finally {
+		favoriting.value = false;
 	}
 }
 
@@ -757,21 +788,7 @@ async function submitReport() {
 	}
 }
 
-// 评论列表时间格式化
-function formatTime(ts) {
-	if (!ts) return '';
-	const diff = Date.now() - ts;
-	const min = 60 * 1000;
-	const hour = 60 * min;
-	const day = 24 * hour;
-	if (diff < min) return '刚刚';
-	if (diff < hour) return Math.floor(diff / min) + '分钟前';
-	if (diff < day) return Math.floor(diff / hour) + '小时前';
-	if (diff < 7 * day) return Math.floor(diff / day) + '天前';
-	const d = new Date(ts);
-	const pad = (n: number): string => String(n).padStart(2, '0');
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+
 </script>
 
 <style lang="scss" scoped>

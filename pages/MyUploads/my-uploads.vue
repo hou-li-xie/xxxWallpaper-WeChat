@@ -1,43 +1,28 @@
 <template>
 	<view class="page">
-		<!-- 状态筛选 -->
-		<view class="tabs">
-			<view
-				v-for="tab in tabs"
-				:key="tab.value"
-				class="tab"
-				:class="{ active: activeStatus === tab.value }"
-				@click="switchTab(tab.value)"
-			>
-				{{ tab.label }}
-			</view>
-		</view>
+		<!-- 状态筛选：标签栏样式由 filter-tabs 组件统一提供 -->
+		<filter-tabs :tabs="tabs" :model-value="activeStatus" @change="switchTab" />
 
 		<!-- 列表：骨架层绝对定位覆盖其上，加载期给容器撑高避免塌陷跳动 -->
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
 			<view class="list">
 				<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
-				<view v-if="!skVisible && !filteredList.length" class="empty">
-					<uni-icons type="image" size="46" color="#bcd0e2"></uni-icons>
-					<text class="empty-text">{{ activeStatus === -1 ? '还没有上传过照片' : '该状态下暂无记录' }}</text>
-					<button v-if="!hideComments && activeStatus === -1" class="go-publish" @click="goPublish">去发布第一张</button>
-				</view>
+				<empty-state
+					v-if="!skVisible && !filteredList.length"
+					icon="image"
+					:text="activeStatus === -1 ? '还没有上传过照片' : '该状态下暂无记录'"
+					:button-text="!hideComments && activeStatus === -1 ? '去发布第一张' : ''"
+					@action="goPublish"
+				/>
 
-				<!-- 左滑卡片：底层是编辑/删除按钮，上层内容可滑动 -->
-				<view class="swipe-item" v-for="(item, index) in filteredList" :key="item._id">
-					<view class="swipe-actions">
-						<view class="action edit" @click="openEdit(item)">编辑</view>
-						<view class="action delete" @click="confirmDelete(item)">删除</view>
-					</view>
-					<view
-						class="swipe-content"
-						:class="{ dragging: item._dragging }"
-						:style="{ transform: 'translateX(' + (item._offset || 0) + 'px)' }"
-						@touchstart="onTouchStart($event, item)"
-						@touchmove="onTouchMove($event, item)"
-						@touchend="onTouchEnd($event, item)"
-						@click="closeSwipe(item)"
-					>
+				<!-- 左滑卡片：交互与操作按钮由 swipe-cell 组件统一提供 -->
+				<swipe-cell
+					v-for="(item, index) in filteredList"
+					:key="item._id"
+					:actions="photoActions"
+					:width="280"
+					@action="(key) => onSwipeAction(key, item)"
+				>
 						<!-- 数据到达后：卡片 → 图片 → 描述 → 时间 → 数据行，依次浮现 -->
 						<view
 							class="card reveal-blk"
@@ -69,8 +54,8 @@
 									<text class="view-detail">查看详情 ›</text>
 								</view>
 							</view>
-					</view>
-				</view>
+						</view>
+				</swipe-cell>
 			</view>
 
 			<!-- 骨架屏：卡片形状与真实内容一致（缩略图 + 三行文字），共用一道斜向光带 -->
@@ -89,7 +74,6 @@
 				</view>
 				<view class="sk-shine"></view>
 			</view>
-			</view>
 		</view>
 
 		<!-- 常驻发布入口（审核期随内容开关隐藏） -->
@@ -104,7 +88,7 @@
 				<textarea
 					v-model="editText"
 					class="edit-textarea"
-					maxlength="200"
+					maxlength="100"
 					placeholder="描述一下这张照片…"
 					auto-height
 				/>
@@ -120,9 +104,10 @@
 
 <script setup lang="ts">
 	import { ref, computed, onUnmounted } from 'vue';
-	import { onShow } from '@dcloudio/uni-app';
+	import { onShow, onReachBottom } from '@dcloudio/uni-app';
 	import { isLoggedIn } from '../../utils/auth';
 	import { resolveFileUrls } from '../../utils/cloud-file';
+	import { formatDateTime as formatTime } from '../../utils/format-time';
 	import { useSkeleton } from '../../utils/skeleton';
 	import { useUserStore } from '../../store/user';
 	import { storeToRefs } from 'pinia';
@@ -149,6 +134,12 @@
 	const activeStatus = ref(-1);
 	const loading = ref(false);
 	const list = ref<any[]>([]);
+	const hasMore = ref(false);
+	// clientDB 分页：按状态在服务端过滤，避免一次只取前 100 条导致旧数据不可见
+	const PAGE_SIZE = 20;
+	let rawSkip = 0;
+	// 请求序号：onShow 重复刷新时丢弃仍在飞行中的旧响应
+	let reqId = 0;
 
 	// 骨架屏：首屏加载中显示，数据到达后淡出并与内容错位浮现交错
 	const { skVisible, skFading, skDone } = useSkeleton();
@@ -158,17 +149,19 @@
 		return Math.min(index, 5) * 60 + step * 60 + 'ms';
 	}
 
-	const filteredList = computed(() => {
-		if (activeStatus.value === -1) return list.value;
-		return list.value.filter((i) => (i.audit_status ?? 0) === activeStatus.value);
-	});
+	// 已按当前状态分页拉取，无需再客户端过滤
+	const filteredList = computed(() => list.value);
 
 	onShow(() => {
 		if (!isLoggedIn()) {
-			uni.redirectTo({ url: '/pages/Login/login' });
+			uni.redirectTo({ url: '/pages/Login/login?redirect=' + encodeURIComponent('/pages/MyUploads/my-uploads') });
 			return;
 		}
-		loadList();
+		reload();
+	});
+
+	onReachBottom(() => {
+		if (hasMore.value && !loading.value) loadList();
 	});
 
 	// 详情页点赞/评论变更 → 原地同步列表内对应照片数量
@@ -187,40 +180,63 @@
 	});
 
 	function switchTab(value: number) {
+		if (activeStatus.value === value) return;
 		activeStatus.value = value;
+		reload();
 	}
 
-	async function loadList() {
+	function reload() {
+		reqId++;
+		rawSkip = 0;
+		list.value = [];
+		hasMore.value = false;
+		loadList(reqId);
+	}
+
+	async function loadList(forceSeq?: number) {
 		if (!myUid.value) return;
+		const seq = typeof forceSeq === 'number' ? forceSeq : reqId;
+		if (seq !== reqId) return;
+		// 分页请求需等上一页结束；reload 触发的强制请求可越过该守卫，由序号丢弃旧结果
+		if (loading.value && typeof forceSeq !== 'number') return;
 		loading.value = true;
 		try {
 			const db = uniCloud.database();
-			// schema 权限保证只能读到本人的记录
+			// schema 权限保证只能读到本人的记录；状态在服务端过滤，分页才准确
+			const where: Record<string, any> = { author_id: myUid.value };
+			if (activeStatus.value >= 0) where.audit_status = activeStatus.value;
 			const res = await db.collection('wallpapers')
-				.where({ author_id: myUid.value })
+				.where(where)
 				.orderBy('createTime', 'desc')
-				.limit(100)
+				.skip(rawSkip)
+				.limit(PAGE_SIZE)
 				.get();
+			if (seq !== reqId) return;
 			const records = (res.result && res.result.data) || [];
 
 			const urlMap = await resolveFileUrls(records.map((r) => r.image).filter(Boolean));
-			list.value = records.map((r) => ({
+			if (seq !== reqId) return;
+			list.value = list.value.concat(records.map((r) => ({
 				...r,
 				audit_status: r.audit_status ?? 0,
 				info: r.info || { likeNum: 0, commentNum: 0 },
 				_imgUrl: urlMap[r.image] || ''
-			}));
+			})));
+			rawSkip += PAGE_SIZE;
+			hasMore.value = records.length === PAGE_SIZE;
 		} catch (e) {
+			if (seq !== reqId) return;
 			console.error('我的上传加载失败', e);
 			uni.showToast({ title: '加载失败，请重试', icon: 'none' });
 		} finally {
-			loading.value = false;
-			skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			if (seq === reqId) {
+				loading.value = false;
+				skDone(); // 无论成功失败都让骨架淡出，避免卡在加载态
+			}
 		}
 	}
 
 	function preview(item: any) {
-		if (item._offset) return closeSwipe(item); // 卡片滑开时点击仅收起
 		if (!item._imgUrl) return;
 		uni.previewImage({
 			urls: [item._imgUrl],
@@ -233,64 +249,20 @@
 	}
 
 	function openApproved(item: any) {
-		if (item._offset) return closeSwipe(item); // 卡片滑开时点击仅收起
 		if (item.audit_status === 1 && item._id) {
 			uni.navigateTo({ url: '/pages/Detail/detail?id=' + item._id });
 		}
 	}
 
-	/* ========== 左滑手势：点击/滑动卡片显示编辑、删除按钮 ========== */
-	// 操作区宽度 280rpx（编辑 140rpx + 删除 140rpx）
-	const ACTION_WIDTH = uni.upx2px(280);
-	// 手势过程状态（非响应式，够用即可）
-	let touchState: { item: any; startX: number; startY: number; baseOffset: number; isHorizontal: boolean | null } = { item: null, startX: 0, startY: 0, baseOffset: 0, isHorizontal: null };
+	/* ========== 左滑操作：手势由 swipe-cell 组件处理，页面只负责按钮语义 ========== */
+	const photoActions = [
+		{ key: 'edit', label: '编辑', type: 'edit' },
+		{ key: 'delete', label: '删除', type: 'delete' }
+	];
 
-	function onTouchStart(e: any, item: any) {
-		closeOthers(item._id); // 同时只展开一张卡片
-		const t = e.touches[0];
-		touchState = {
-			item,
-			startX: t.clientX,
-			startY: t.clientY,
-			baseOffset: item._offset || 0,
-			isHorizontal: null
-		};
-		item._dragging = true;
-	}
-
-	function onTouchMove(e: any, item: any) {
-		if (touchState.item !== item) return;
-		const t = e.touches[0];
-		const dx = t.clientX - touchState.startX;
-		const dy = t.clientY - touchState.startY;
-		// 首次有效位移时判定手势方向：竖向滚动不拦截
-		if (touchState.isHorizontal === null) {
-			if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-			touchState.isHorizontal = Math.abs(dx) > Math.abs(dy);
-		}
-		if (!touchState.isHorizontal) return;
-		const next = Math.min(0, Math.max(-ACTION_WIDTH, touchState.baseOffset + dx));
-		item._offset = next;
-	}
-
-	function onTouchEnd(e: any, item: any) {
-		if (touchState.item !== item) return;
-		item._dragging = false;
-		if (touchState.isHorizontal) {
-			// 超过 1/3 宽度自动展开，否则弹回
-			item._offset = item._offset < -ACTION_WIDTH / 3 ? -ACTION_WIDTH : 0;
-		}
-		touchState.item = null;
-	}
-
-	function closeSwipe(item: any) {
-		item._offset = 0;
-	}
-
-	function closeOthers(exceptId: string) {
-		list.value.forEach((i) => {
-			if (i._id !== exceptId && i._offset) i._offset = 0;
-		});
+	function onSwipeAction(key: string, item: any) {
+		if (key === 'edit') openEdit(item);
+		else if (key === 'delete') confirmDelete(item);
 	}
 
 	/* ========== 编辑描述 ========== */
@@ -299,7 +271,6 @@
 	let editingItem: any = null;
 
 	function openEdit(item: any) {
-		closeSwipe(item);
 		editingItem = item;
 		editText.value = item.description || '';
 		editVisible.value = true;
@@ -311,7 +282,7 @@
 		try {
 			const res = await uniCloud.callFunction({
 				name: 'wallpaper-action',
-				data: { action: 'updateUpload', id: editingItem._id, description: editText.value.trim() }
+				data: { action: 'updateUpload', id: editingItem._id, description: editText.value.trim().slice(0, 100) }
 			});
 			const r = res.result || {};
 			if (r.errCode) {
@@ -319,7 +290,7 @@
 				return;
 			}
 			// 本地同步：描述更新、回到待审核、清掉驳回原因
-			editingItem.description = editText.value.trim();
+			editingItem.description = editText.value.trim().slice(0, 100);
 			editingItem.audit_status = 0;
 			delete editingItem.audit_reason;
 			editVisible.value = false;
@@ -333,7 +304,6 @@
 
 	/* ========== 删除上传 ========== */
 	function confirmDelete(item: any) {
-		closeSwipe(item);
 		uni.showModal({
 			title: '删除这条上传？',
 			content: hideComments.value
@@ -365,54 +335,12 @@
 		});
 	}
 
-	function formatTime(ts: any): string {
-		if (!ts) return '';
-		const d = new Date(Number(ts));
-		const pad = (n: number): string => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-	}
 </script>
 
 <style lang="scss">
 	.page {
 		min-height: 100vh;
 		background: #f5f7fa;
-	}
-
-	.tabs {
-		position: sticky;
-		top: 0;
-		z-index: 10;
-		display: flex;
-		background: #fff;
-		padding: 0 10rpx;
-		box-shadow: 0 2rpx 12rpx rgba(56, 151, 228, 0.06);
-
-		.tab {
-			flex: 1;
-			text-align: center;
-			padding: 26rpx 0;
-			font-size: 28rpx;
-			color: #6b7d8f;
-			position: relative;
-
-			&.active {
-				color: #2c98e7;
-				font-weight: bold;
-
-				&::after {
-					content: '';
-					position: absolute;
-					bottom: 8rpx;
-					left: 50%;
-					transform: translateX(-50%);
-					width: 48rpx;
-					height: 6rpx;
-					border-radius: 3rpx;
-					background: #2c98e7;
-				}
-			}
-		}
 	}
 
 	.list {
@@ -439,48 +367,12 @@
 		}
 	}
 
-	/* 左滑项：底层操作按钮 + 上层滑动卡片 */
+	/* 左滑骨架行：真实卡片的左滑交互见 components/swipe-cell */
 	.swipe-item {
 		position: relative;
 		margin-bottom: 20rpx;
 		border-radius: 20rpx;
 		overflow: hidden;
-	}
-
-	.swipe-actions {
-		position: absolute;
-		right: 0;
-		top: 0;
-		bottom: 0;
-		width: 280rpx;
-		display: flex;
-
-		.action {
-			flex: 1;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			font-size: 28rpx;
-			color: #fff;
-
-			&.edit {
-				background: #4facfe;
-			}
-
-			&.delete {
-				background: #e65a5a;
-			}
-		}
-	}
-
-	.swipe-content {
-		position: relative;
-		transition: transform 0.25s ease;
-
-		// 拖动过程中关掉过渡，跟手
-		&.dragging {
-			transition: none;
-		}
 	}
 
 	.card {
@@ -611,34 +503,6 @@
 					margin-left: auto;
 					color: #3897e4;
 				}
-			}
-		}
-	}
-
-	.empty {
-		padding-top: 180rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-
-		.empty-text {
-			margin-top: 20rpx;
-			font-size: 28rpx;
-			color: #9bb4c9;
-		}
-
-		.go-publish {
-			margin-top: 36rpx;
-			height: 76rpx;
-			line-height: 76rpx;
-			padding: 0 56rpx;
-			border-radius: 38rpx;
-			background: linear-gradient(90deg, #4facfe 0%, #2c98e7 100%);
-			color: #fff;
-			font-size: 28rpx;
-
-			&::after {
-				border: none;
 			}
 		}
 	}

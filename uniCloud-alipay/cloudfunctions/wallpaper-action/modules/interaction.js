@@ -336,10 +336,42 @@ async function favoriteList(ctx) {
 		.map((f) => {
 			const wp = wpMap[f.wallpaper_id];
 			if (!wp || wp.audit_status !== 1) return null;
-			return { ...wp, _favId: f._id };
+			return { ...wp, _favId: f._id, _favTime: f.create_time };
 		})
 		.filter(Boolean);
 	return { errCode: 0, list, hasMore: favs.length === LIMIT };
 }
 
-module.exports = { toggleLike, comments, addComment, deleteComment, toggleFavorite, favoriteList };
+/* ========== 我的点赞列表（同 favoriteList 模式，查 wallpaper_likes 回填照片） ========== */
+async function likeList(ctx) {
+	const { dbCmd, wallpaperCol, likeCol, uid, event } = ctx;
+	const { skip = 0 } = event;
+	if (!uid) return { errCode: 'LOGIN_REQUIRED', errMsg: '请先登录' };
+	const LIMIT = 20;
+	const likeRes = await likeCol
+		.where({ user_id: uid })
+		.orderBy('create_time', 'desc')
+		.skip(skip)
+		.limit(LIMIT)
+		.get();
+	const likes = likeRes.data || [];
+	if (!likes.length) return { errCode: 0, list: [], hasMore: false };
+
+	const wpIds = likes.map((l) => l.wallpaper_id);
+	const wpRes = await wallpaperCol.where({ _id: dbCmd.in(wpIds) }).get();
+	const wpMap = {};
+	(wpRes.data || []).forEach((wp) => {
+		wpMap[wp._id] = wp;
+	});
+	// 保持点赞时间序，剔除照片已删除或已被下架的
+	const list = likes
+		.map((l) => {
+			const wp = wpMap[l.wallpaper_id];
+			if (!wp || wp.audit_status !== 1) return null;
+			return { ...wp, _likeId: l._id, _likeTime: l.create_time };
+		})
+		.filter(Boolean);
+	return { errCode: 0, list, hasMore: likes.length === LIMIT };
+}
+
+module.exports = { toggleLike, comments, addComment, deleteComment, toggleFavorite, favoriteList, likeList };

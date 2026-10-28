@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="notice-page">
 		<view class="notice-card">
 			<view class="notice-title">公告与声明</view>

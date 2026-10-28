@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 榜单切换：标签栏样式由 filter-tabs 组件统一提供 -->
 		<filter-tabs :tabs="tabs" :model-value="rankType" @change="switchTab" />
@@ -71,16 +71,20 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 评论开关：true=隐藏评论榜 tab（app_config.hide_content 控制，默认隐藏兜底）
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	const tabs = computed(() => {
 		const list = [
 			{ label: '点赞榜', value: 'like' },
 			{ label: '浏览榜', value: 'view' }
 		];
-		if (!hideComments.value) list.push({ label: '评论榜', value: 'comment' });
+		// wx:audit off 审核期屏蔽：不加入评论榜 tab
+		// if (!hideComments.value) list.push({ label: '评论榜', value: 'comment' });
+		// /wx:audit
 		return list;
 	});
 	// 前三名奖牌色：金/银/铜

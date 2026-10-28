@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 数据概览 -->
 		<scroll-view v-if="stats" scroll-x class="stats-bar" :show-scrollbar="false">
@@ -7,7 +7,10 @@
 			<view class="stat"><text class="stat-num">{{ stats.rejected }}</text><text class="stat-label">已驳回</text></view>
 			<view class="stat"><text class="stat-num">{{ stats.reportsPending }}</text><text class="stat-label">待处理举报</text></view>
 			<view class="stat"><text class="stat-num">{{ stats.users }}</text><text class="stat-label">用户</text></view>
+			<!-- wx:audit off 审核期屏蔽评论统计项
 			<view v-if="!hideComments" class="stat"><text class="stat-num">{{ stats.comments }}</text><text class="stat-label">评论</text></view>
+			
+			<!-- /wx:audit -->
 			<view class="stat"><text class="stat-num">{{ stats.likes }}</text><text class="stat-label">点赞</text></view>
 		</scroll-view>
 
@@ -70,8 +73,9 @@
 								<view class="author-row reveal-blk" :style="{ animationDelay: d(index, 2) }">
 									<image v-if="item._avatarUrl" class="author-avatar" :src="item._avatarUrl" mode="aspectFill"></image>
 									<text class="author-name">{{ (item.author && item.author.name) || '用户' }}</text>
-									<text v-if="!hideComments" class="stats">赞 {{ (item.info && item.info.likeNum) || 0 }} · 评 {{ (item.info && item.info.commentNum) || 0 }}</text>
-									<text v-else class="stats">赞 {{ (item.info && item.info.likeNum) || 0 }}</text>
+									<!-- wx:audit off 审核期屏蔽带评论数的分支，让 v-else 分支自然落下 
+									<!-- /wx:audit -->
+									<text class="stats">赞 {{ (item.info && item.info.likeNum) || 0 }}</text>
 								</view>
 								<view class="desc reveal-blk" :style="{ animationDelay: d(index, 3) }">{{ item.description || '（未填写描述）' }}</view>
 								<view class="time reveal-blk" :style="{ animationDelay: d(index, 4) }">{{ formatTime(item.createTime) }}</view>
@@ -187,10 +191,10 @@
 			</view>
 		</template>
 
+		<!-- wx:audit off 审核期屏蔽评论管理整块（受 !hideComments 控制）
 		<template v-else-if="mode === 'comment' && !hideComments">
 			<view class="feed" :class="{ 'feed-loading': skVisible }">
 				<view class="list">
-					<!-- 空态：骨架移除后再展示，避免与骨架重叠 -->
 					<empty-state v-if="!skVisible && !commentList.length" icon="chatbubble-filled" text="暂无评论" />
 
 					<view class="card reveal-blk" v-for="(item, index) in commentList" :key="item._id" :style="{ animationDelay: d(index, 0) }">
@@ -209,7 +213,6 @@
 					<view v-if="commentList.length" class="loadmore">{{ loadmoreText }}</view>
 				</view>
 
-				<!-- 骨架屏：头部一行 + 正文 + 底部缩略图与按钮，共用一道斜向光带 -->
 				<view v-if="skVisible" class="sk-layer" :class="{ 'sk-out': skFading }">
 					<view class="list">
 						<view class="card" v-for="i in 6" :key="i">
@@ -226,6 +229,8 @@
 				</view>
 			</view>
 		</template>
+		
+		<!-- /wx:audit -->
 
 		<!-- ================= 用户管理 ================= -->
 		<template v-else-if="mode === 'user'">
@@ -338,16 +343,20 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 全局开关：true 时隐藏评论相关内容
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	const modes = computed(() => {
 		const arr = [
 			{ label: '照片', value: 'photo' },
 			{ label: '举报', value: 'report' }
 		];
-		if (!hideComments.value) arr.push({ label: '评论', value: 'comment' });
+		// wx:audit off 审核期屏蔽：不加入评论 tab
+		// if (!hideComments.value) arr.push({ label: '评论', value: 'comment' });
+		// /wx:audit
 		arr.push({ label: '用户', value: 'user' });
 		return arr;
 	});

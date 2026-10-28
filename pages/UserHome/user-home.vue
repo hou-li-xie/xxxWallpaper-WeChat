@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 用户信息头 -->
 		<view class="user-header">

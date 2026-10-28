@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 骨架层绝对定位覆盖其上，加载期给容器撑高避免塌陷跳动 -->
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
@@ -66,7 +66,7 @@
 			</view>
 		</view>
 
-		<!-- 评论区：hide_content=true 时整体隐藏（开关由 store/app-config.ts 读取） -->
+		<!-- wx:audit off 审核期屏蔽评论区
 		<view v-if="!hideComments" class="card comment-card reveal-blk" :style="{ animationDelay: d(4) }">
 			<view class="section-title">
 				<text>评论 {{ commentCount }}</text>
@@ -117,6 +117,8 @@
 
 			<view v-if="hasMore" class="loading-tip" @click="loadComments(true)">加载更多评论</view>
 		</view>
+		
+		<!-- /wx:audit -->
 
 		<!-- 骨架屏：形状与真实内容一致（大图 + 头像行 + 描述/统计文字），共用一道斜向光带 -->
 		<view v-if="skVisible" class="sk-layer" :class="{ 'sk-out': skFading }">
@@ -159,11 +161,13 @@
 
 		<!-- 底部操作栏：点赞 + 评论输入（评论随 hide_content 开关隐藏） -->
 		<view class="bottom-wrap" :style="{ paddingBottom: safeBottom + 'px' }">
-			<!-- 回复提示条 -->
+			<!-- wx:audit off 审核期屏蔽回复提示条
 			<view v-if="!hideComments && replyTarget" class="reply-chip">
 				<text class="chip-text">回复 @{{ replyTarget.name }}</text>
 				<text class="chip-cancel" @click="cancelReply">取消</text>
 			</view>
+			
+			<!-- /wx:audit -->
 			<view class="bottom-bar">
 				<view class="like-btn" @click="onToggleLike">
 					<uni-icons
@@ -175,7 +179,7 @@
 					></uni-icons>
 					<text class="like-num" :class="{ active: liked }">{{ likeCount }}</text>
 				</view>
-				<!-- 评论输入框 + 发送按钮（随开关隐藏） -->
+				<!-- wx:audit off 审核期屏蔽评论输入
 				<template v-if="!hideComments">
 					<input
 						class="comment-input"
@@ -192,6 +196,8 @@
 						发送
 					</view>
 				</template>
+				
+				<!-- /wx:audit -->
 			</view>
 		</view>
 
@@ -248,9 +254,11 @@ const heroHeightPx = computed(() => {
 	const clamped = Math.min(Math.max(ratio, 0.55), 1.35);
 	return Math.round(winWidth / clamped);
 });
+// wx:audit off 审核期注释：hideComments 变量无引用
 // 评论开关：true=隐藏评论（app_config.hide_content 控制，默认隐藏兜底，读取失败也按隐藏）
-const appStore = useAppConfigStore();
-const { hideContent: hideComments } = storeToRefs(appStore);
+// const appStore = useAppConfigStore();
+// const { hideContent: hideComments } = storeToRefs(appStore);
+// /wx:audit
 
 // 骨架屏：详情首屏加载中显示，数据到达后淡出并与内容错位浮现交错
 const { skVisible, skFading, skDone } = useSkeleton();
@@ -299,7 +307,9 @@ const subTmplId = ref('');
 function onLoginSuccess() {
 	rawSkip = 0;
 	loadDetail();
-	if (!hideComments.value) loadComments();
+	// wx:audit off 审核期不拉取评论
+	// if (!hideComments.value) loadComments();
+	// /wx:audit
 }
 uni.$on('loginSuccess', onLoginSuccess);
 onUnmounted(() => {
@@ -314,13 +324,14 @@ onLoad((options: any) => {
 			safeBottom.value = (sys.safeAreaInsets && sys.safeAreaInsets.bottom) || 0;
 		} catch (err) {}
 		loadDetail();
-		// 评论开关：隐藏时不拉取评论列表与订阅模板
-		appStore.init().then(() => {
-			if (!appStore.hideContent) {
-				loadComments();
-				loadSubInfo();
-			}
-		});
+		// wx:audit off 审核期不拉取评论与订阅模板
+		// appStore.init().then(() => {
+		// 	if (!appStore.hideContent) {
+		// 		loadComments();
+		// 		loadSubInfo();
+		// 	}
+		// });
+		// /wx:audit
 	}
 });
 

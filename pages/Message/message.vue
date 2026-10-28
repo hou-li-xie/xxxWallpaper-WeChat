@@ -1,28 +1,18 @@
-<template>
+﻿<template>
 	<view class="page">
-		<!-- 订阅服务通知入口（模板配置好且为微信小程序才展示） -->
-		<!-- #ifdef MP-WEIXIN -->
-		<view v-if="!hideComments && templateId" class="sub-card">
-			<view class="sub-left">
-				<uni-icons type="notification" size="20" color="#2c98e7"></uni-icons>
-				<view class="sub-text">
-					<text class="sub-title">微信回复提醒</text>
-					<text class="sub-desc">{{ subDescText }}</text>
-				</view>
-			</view>
-			<view class="sub-btn" :class="{ disabled: subscribing }" @click="onSubCardClick">
-				{{ subscribing ? '处理中' : subBtnText }}
-			</view>
-		</view>
-		<!-- #endif -->
+		<!-- wx:audit off 审核期屏蔽订阅卡片（受 !hideComments 控制）
+		原代码：v-if !hideComments && templateId 的 sub-card 整块，含微信回复提醒入口和订阅按钮
+		
+		<!-- /wx:audit -->
 
 		<!-- 未登录 -->
 		<view v-if="!isLogin" class="login-tip">
-			<template v-if="!hideComments">
-				<uni-icons type="chatbubble" size="46" color="#a7bfd3"></uni-icons>
-				<text class="login-tip-text">登录后查看回复消息</text>
-			</template>
-			<template v-else>
+			<!-- wx:audit off 审核期屏蔽评论相关的提示分支，同时去掉 v-else 让剩余块独立渲染
+			原结构：<template v-if="!hideComments">评论提示</template> + <template v-else>登录提示</template>
+			屏蔽后：原来的 v-if 分支整块被注释，v-else 改回普通 template 固定渲染
+			恢复时：把上方 wx:audit off 注释块解开，下方改回 <template v-else>
+			-->
+			<template>
 				<uni-icons type="bell" size="46" color="#a7bfd3"></uni-icons>
 				<text class="login-tip-text">登录后查看消息通知</text>
 			</template>
@@ -122,9 +112,11 @@ import { useAppConfigStore } from '../../store/app-config';
 
 const PROMPT_KEY = 'subscribe_prompted_v1';
 
+// wx:audit off 审核期注释：hideComments 变量无引用
 // 全局开关：true 时隐藏评论相关内容（含回复订阅入口）
-const appStore = useAppConfigStore();
-const { hideContent: hideComments } = storeToRefs(appStore);
+// const appStore = useAppConfigStore();
+// const { hideContent: hideComments } = storeToRefs(appStore);
+// /wx:audit
 
 // 登录态：从全局 store 响应式读取，登录/登出自动同步
 const userStore = useUserStore();
@@ -174,7 +166,9 @@ onShow(() => {
 	}
 	loadList(true);
 	messageStore.refreshBadge();
-	if (!hideComments.value) initSubscribePrompt();
+	// wx:audit off 审核期屏蔽：订阅弹窗不再触发
+	// if (!hideComments.value) initSubscribePrompt();
+	// /wx:audit
 });
 
 onReachBottom(() => {
@@ -189,7 +183,9 @@ function onLoginSuccess() {
 	loadList(true);
 	messageStore.refreshBadge();
 	refreshSubInfo();
-	if (!hideComments.value) initSubscribePrompt();
+	// wx:audit off 审核期屏蔽：订阅弹窗不再触发
+	// if (!hideComments.value) initSubscribePrompt();
+	// /wx:audit
 }
 uni.$on('loginSuccess', onLoginSuccess);
 

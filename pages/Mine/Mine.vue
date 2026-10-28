@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="mine-page">
 		<view class="user-header">
 			<view class="user-card" @click="handleCardClick">
@@ -17,17 +17,21 @@
 		</view>
 
 		<view v-if="isLogin" class="menu">
-			<view v-if="!hideComments" class="menu-item" @click="goMyUploads">
-				<view class="menu-left">
-					<uni-icons type="images" size="22" color="#2c98e7"></uni-icons>
-					<text class="menu-text">我的上传</text>
-				</view>
-				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
-			</view>
+			<!-- wx:audit off 审核期屏蔽"我的上传"菜单项（受 !hideComments 控制）
+			原 v-if !hideComments 的 menu-item 整块已注释
+			
+			<!-- /wx:audit -->
 			<view class="menu-item" @click="goFavorites">
 				<view class="menu-left">
 					<uni-icons type="star-filled" size="22" color="#f5a623"></uni-icons>
 					<text class="menu-text">我的收藏</text>
+				</view>
+				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
+			</view>
+			<view class="menu-item" @click="goLikes">
+				<view class="menu-left">
+					<uni-icons type="hand-up-filled" size="22" color="#e65a5a"></uni-icons>
+					<text class="menu-text">我的点赞</text>
 				</view>
 				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
 			</view>
@@ -57,10 +61,8 @@
 			<button class="logout-btn" @click="handleLogout">退出登录</button>
 		</view>
 
-		<!-- 常驻发布入口（受内容开关控制） -->
-		<view v-if="isLogin && !hideComments" class="fab" @click="goPublish">
-			<uni-icons type="plusempty" size="34" color="#fff"></uni-icons>
-		</view>
+		<!-- wx:audit off 审核期屏蔽发布入口 FAB（受 !hideComments 控制） 
+		<!-- /wx:audit -->
 	</view>
 </template>
 
@@ -76,9 +78,11 @@
 	// 登录态/用户信息：从全局 store 响应式读取，登录/登出自动同步
 	const userStore = useUserStore();
 	const { isLogin } = storeToRefs(userStore);
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 全局开关：true 时隐藏评论/上传相关入口
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 	const userInfo = computed<UserInfo>(() => userStore.userInfo || { _id: '', nickname: '', avatar: '' });
 	const avatarUrl = ref('');
 	// 是否超级管理员（登录时由 user-login 返回，随 userInfo 存本地）
@@ -119,6 +123,10 @@
 
 	function goFavorites() {
 		uni.navigateTo({ url: '/pages/Favorites/favorites' });
+	}
+
+	function goLikes() {
+		uni.navigateTo({ url: '/pages/Likes/likes' });
 	}
 
 	function goAdmin() {

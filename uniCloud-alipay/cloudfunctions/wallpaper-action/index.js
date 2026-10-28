@@ -29,6 +29,7 @@ const app = require('./modules/app');
  *   deleteComment 删除自己的评论（顶级评论级联删除回复）        [modules/interaction]
  *   toggleFavorite 收藏 / 取消收藏                             [modules/interaction]
  *   favoriteList  我的收藏分页                                 [modules/interaction]
+ *   likeList      我的点赞分页                                 [modules/interaction]
  *   notifications 我的站内通知列表                             [modules/notify]
  *   unreadCount   我的未读通知数                               [modules/notify]
  *   markRead      标记单条通知已读                             [modules/notify]

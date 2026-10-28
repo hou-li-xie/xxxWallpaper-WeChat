@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="content">
 		<!-- ===== 固定头部：日期 + 搜索 + 标签（不随图片列表滚动）===== -->
 		<!-- 顶部首行与微信胶囊同高，右侧预留胶囊宽度，避免「排行榜/标题」被胶囊遮挡 -->
@@ -199,11 +199,13 @@
 								<uni-icons :type="item.liked ? 'hand-up-filled' : 'hand-up'" size="13" :color="item.liked ? '#e65a5a' : '#9aa7b4'"></uni-icons>
 								<text class="stat-num">{{ (item.info && item.info.likeNum) || 0 }}</text>
 							</view>
-							<!-- 评论数气泡（随 hide_content 开关隐藏） -->
+							<!-- wx:audit off 审核期屏蔽（审核通过恢复）
 							<view v-if="!hideComments" class="stat">
 								<uni-icons type="chatbubble" size="13" color="#9aa7b4"></uni-icons>
 								<text class="stat-num">{{ (item.info && item.info.commentNum) || 0 }}</text>
 							</view>
+							
+							<!-- /wx:audit -->
 						</view>
 						</view>
 					</view>
@@ -228,10 +230,15 @@
 			</view>
 		</scroll-view>
 
-		<!-- 发布入口（审核期随内容开关隐藏） -->
+		<!-- wx:audit off 发布入口（审核期屏蔽） 
 		<view v-if="!hideComments" class="fab" @click="goPublish">
 			<uni-icons type="plusempty" size="30" color="#fff"></uni-icons>
 		</view>
+		-->
+		<view class="fab" @click="goPublish">
+			<uni-icons type="plusempty" size="30" color="#fff"></uni-icons>
+		</view>
+		<!-- /wx:audit -->
 	</view>
 </template>
 
@@ -244,9 +251,10 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
-	// 评论开关：true=隐藏评论数气泡（app_config.hide_content 控制，默认隐藏兜底）
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// wx:audit off 审核期注释：hideComments 变量无引用
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	// 未读角标：拉取未读数并同步消息 tab 角标
 	const messageStore = useMessageStore();
@@ -344,8 +352,10 @@
 	const emptySub = computed(() => {
 		if (searchMode.value) return '换个关键词试试';
 		if (hasFilter.value) return '调整筛选条件再看看';
-		// 发布入口隐藏时不再引导发布
-		return hideComments.value ? '先逛逛大家分享的照片吧' : '点击右下角 ＋ 发布第一张吧';
+	// wx:audit off 审核期固定文案（原三目依赖 hideComments，注释掉发布引导分支）
+	// return hideComments.value ? '先逛逛大家分享的照片吧' : '点击右下角 ＋ 发布第一张吧';
+	return '先逛逛大家分享的照片吧';
+	// /wx:audit
 	});
 
 	function openFilter() {

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="crop-page">
 		<!-- 自定义顶部栏：右上角是微信胶囊，右侧不放任何按钮 -->
 		<view class="toolbar" :style="{ paddingTop: barTop + 'px', height: barTop + barHeight + 'px' }">

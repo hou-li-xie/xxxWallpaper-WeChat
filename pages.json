@@ -83,6 +83,13 @@
 				"navigationBarTitleText": "TA 的主页",
 				"enablePullDownRefresh": true
 			}
+		},
+		{
+			"path": "pages/Likes/likes",
+			"style": {
+				"navigationBarTitleText": "我的点赞",
+				"enablePullDownRefresh": true
+			}
 		}
 	],
 	"globalStyle": {

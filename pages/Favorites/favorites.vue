@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 骨架层绝对定位覆盖其上，加载期给容器撑高避免塌陷跳动 -->
 		<view class="feed" :class="{ 'feed-loading': skVisible }">
@@ -29,11 +29,8 @@
 						<view class="stats reveal-blk" :style="{ animationDelay: d(index, 4) }">
 							<uni-icons type="hand-up" size="15" color="#8fb6d6"></uni-icons>
 							<text>{{ (item.info && item.info.likeNum) || 0 }}</text>
-							<!-- 评论数（随 hide_content 开关隐藏） -->
-							<template v-if="!hideComments">
-								<uni-icons type="chatbubble" size="15" color="#8fb6d6"></uni-icons>
-								<text>{{ (item.info && item.info.commentNum) || 0 }}</text>
-							</template>
+							<!-- wx:audit off 审核期屏蔽评论数（受 !hideComments 控制） 
+							<!-- /wx:audit -->
 							<text class="view-detail">查看详情 ›</text>
 						</view>
 					</view>
@@ -70,9 +67,11 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 评论开关：true=隐藏评论数（app_config.hide_content 控制，默认隐藏兜底）
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	const list = ref<any[]>([]);
 	const loading = ref(false);

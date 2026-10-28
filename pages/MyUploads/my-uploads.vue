@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 状态筛选：标签栏样式由 filter-tabs 组件统一提供 -->
 		<filter-tabs :tabs="tabs" :model-value="activeStatus" @change="switchTab" />
@@ -11,7 +11,6 @@
 					v-if="!skVisible && !filteredList.length"
 					icon="image"
 					:text="activeStatus === -1 ? '还没有上传过照片' : '该状态下暂无记录'"
-					:button-text="!hideComments && activeStatus === -1 ? '去发布第一张' : ''"
 					@action="goPublish"
 				/>
 
@@ -46,11 +45,13 @@
 								<view v-if="item.audit_status === 1" class="stats reveal-blk" :style="{ animationDelay: d(index, 4) }">
 									<uni-icons type="hand-up" size="15" color="#8fb6d6"></uni-icons>
 									<text>{{ (item.info && item.info.likeNum) || 0 }}</text>
-									<!-- 评论数（随 hide_content 开关隐藏） -->
+									<!-- wx:audit off 审核期屏蔽评论数
 									<template v-if="!hideComments">
 										<uni-icons type="chatbubble" size="15" color="#8fb6d6"></uni-icons>
 										<text>{{ (item.info && item.info.commentNum) || 0 }}</text>
 									</template>
+									
+									<!-- /wx:audit -->
 									<text class="view-detail">查看详情 ›</text>
 								</view>
 							</view>
@@ -76,10 +77,12 @@
 			</view>
 		</view>
 
-		<!-- 常驻发布入口（审核期随内容开关隐藏） -->
+		<!-- wx:audit off 审核期屏蔽发布入口
 		<view v-if="!hideComments" class="fab" @click="goPublish">
 			<uni-icons type="plusempty" size="34" color="#fff"></uni-icons>
 		</view>
+		
+		<!-- /wx:audit -->
 
 		<!-- 编辑描述弹窗 -->
 		<view v-if="editVisible" class="edit-mask" @click="editVisible = false">
@@ -113,9 +116,11 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 评论开关：true=隐藏评论数（app_config.hide_content 控制，默认隐藏兜底）
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	// 用户信息：从全局 store 响应式读取
 	const userStore = useUserStore();
@@ -306,9 +311,12 @@
 	function confirmDelete(item: any) {
 		uni.showModal({
 			title: '删除这条上传？',
-			content: hideComments.value
-				? '删除后不可恢复，相关的点赞也会一并清除'
-				: '删除后不可恢复，相关的点赞和评论也会一并清除',
+			// wx:audit off 审核期固定文案（原三目依赖 hideComments）
+			// content: hideComments.value
+			// 	? '删除后不可恢复，相关的点赞也会一并清除'
+			// 	: '删除后不可恢复，相关的点赞和评论也会一并清除',
+			content: '删除后不可恢复，相关的点赞也会一并清除',
+			// /wx:audit
 			confirmText: '删除',
 			confirmColor: '#e65a5a',
 			success: async (m) => {

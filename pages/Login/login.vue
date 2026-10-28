@@ -1,10 +1,11 @@
-<template>
+﻿<template>
 	<view class="login-page">
 		<view class="login-header">
 			<image class="logo" src="/static/logo.jpeg" mode="aspectFill"></image>
 			<view class="app-name">十月初美人鉴赏</view>
-			<view v-if="!hideComments" class="app-tip">完善头像昵称后即可上传美图、点赞评论</view>
-			<view v-else class="app-tip">完善头像昵称后即可上传美图、点赞收藏</view>
+			<!-- wx:audit off 审核期屏蔽评论相关的提示文案，固定为"点赞收藏"版本 
+			<!-- /wx:audit -->
+			<view class="app-tip">完善头像昵称后即可上传美图、点赞收藏</view>
 		</view>
 
 		<view class="login-card">
@@ -56,9 +57,11 @@
 	import { storeToRefs } from 'pinia';
 	import { useAppConfigStore } from '../../store/app-config';
 
+	// wx:audit off 审核期注释：hideComments 变量无引用
 	// 全局开关：true 时隐藏评论相关文案
-	const appStore = useAppConfigStore();
-	const { hideContent: hideComments } = storeToRefs(appStore);
+	// const appStore = useAppConfigStore();
+	// const { hideContent: hideComments } = storeToRefs(appStore);
+	// /wx:audit
 
 	// 登录态统一走全局 user store（store 内部写 storage 并广播 loginSuccess）
 	const userStore = useUserStore();

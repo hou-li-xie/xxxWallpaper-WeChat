@@ -3,7 +3,7 @@ const { genMigrateCode, getUidFromContext } = require('../common/helpers');
 const { checkMigrateRate } = require('../common/rate-limit');
 const { issueToken } = require('../common/token');
 
-/* ==================== 账号迁移码（App 游客账号换机/重装恢复） ==================== */
+/* ==================== 账号迁移码（H5 登录 / 换机或重装恢复） ==================== */
 
 // 获取（首次自动生成）当前账号迁移码 —— 需登录
 async function getMigrateCode(event, context) {
@@ -15,7 +15,6 @@ async function getMigrateCode(event, context) {
 	const uRes = await userCol.doc(uid).get();
 	const user = uRes.data && uRes.data[0];
 	if (!user) return { errCode: 'USER_NOT_FOUND', errMsg: '账号不存在' };
-	if (!user.guest_id) return { errCode: 'NOT_SUPPORTED', errMsg: '当前账号类型不支持迁移码' };
 
 	if (user.migrate_code) {
 		return { errCode: 0, migrateCode: user.migrate_code, createTime: user.migrate_code_time || 0 };

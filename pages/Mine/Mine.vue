@@ -35,6 +35,13 @@
 				</view>
 				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
 			</view>
+			<view class="menu-item" @click="goMigrateCode">
+				<view class="menu-left">
+					<uni-icons type="auth-filled" size="22" color="#2c98e7"></uni-icons>
+					<text class="menu-text">账号迁移码</text>
+				</view>
+				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
+			</view>
 		</view>
 
 		<view v-if="isLogin && isAdmin" class="menu">
@@ -55,6 +62,15 @@
 				</view>
 				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
 			</view>
+			<!-- #ifdef MP-WEIXIN -->
+			<button class="menu-item contact-btn" open-type="contact" hover-class="none">
+				<view class="menu-left">
+					<uni-icons type="chatbubble" size="22" color="#2c98e7"></uni-icons>
+					<text class="menu-text">联系客服</text>
+				</view>
+				<uni-icons type="right" size="16" color="#b5c8d8"></uni-icons>
+			</button>
+			<!-- #endif -->
 		</view>
 
 		<view v-if="isLogin" class="logout-box">
@@ -127,6 +143,10 @@
 
 	function goLikes() {
 		uni.navigateTo({ url: '/pages/Likes/likes' });
+	}
+
+	function goMigrateCode() {
+		uni.navigateTo({ url: '/pages/Mine/migrate-code' });
 	}
 
 	function goAdmin() {
@@ -218,7 +238,23 @@
 			background: #fff;
 			border-radius: 20rpx;
 			padding: 32rpx 30rpx;
+		}
 
+		button.menu-item {
+			width: 100%;
+			margin: 0;
+			box-sizing: border-box;
+			border: 0;
+			line-height: normal;
+			text-align: left;
+			font-weight: normal;
+
+			&::after {
+				border: none;
+			}
+		}
+
+		.menu-item {
 			& + .menu-item {
 				margin-top: 16rpx;
 			}

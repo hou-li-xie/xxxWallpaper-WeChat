@@ -5,47 +5,80 @@
 			<view class="app-name">十月初美人鉴赏</view>
 			<!-- wx:audit off 审核期屏蔽评论相关的提示文案，固定为"点赞收藏"版本 
 			<!-- /wx:audit -->
-			<view class="app-tip">完善头像昵称后即可上传美图、点赞收藏</view>
+			<view class="app-tip">{{ migrateMode ? '输入迁移码即可恢复账号数据' : '完善头像昵称后即可上传美图、点赞收藏' }}</view>
 		</view>
 
 		<view class="login-card">
-			<!-- #ifdef MP-WEIXIN -->
-			<!-- 微信「头像昵称填写能力」：点击按钮可直接使用微信头像 -->
-			<button id="chooseAvatarBtn" class="avatar-btn" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
-				<image v-if="avatarUrl" class="avatar" :src="avatarUrl" mode="aspectFill"></image>
-				<view v-else class="avatar avatar-placeholder">
-					<uni-icons type="camera-filled" size="34" color="#9bb8d3"></uni-icons>
-					<text class="avatar-tip">选择微信头像</text>
-				</view>
-			</button>
-			<!-- #endif -->
+			<template v-if="!migrateMode">
+				<!-- #ifdef MP-WEIXIN -->
+				<!-- 微信「头像昵称填写能力」：点击按钮可直接使用微信头像 -->
+				<button id="chooseAvatarBtn" class="avatar-btn" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
+					<image v-if="avatarUrl" class="avatar" :src="avatarUrl" mode="aspectFill"></image>
+					<view v-else class="avatar avatar-placeholder">
+						<uni-icons type="camera-filled" size="34" color="#9bb8d3"></uni-icons>
+						<text class="avatar-tip">选择微信头像</text>
+					</view>
+				</button>
+				<!-- #endif -->
 
-			<!-- #ifndef MP-WEIXIN -->
-			<!-- 其他平台退化为本地选图 -->
-			<view class="avatar-btn" @click="chooseAvatarFallback">
-				<image v-if="avatarUrl" class="avatar" :src="avatarUrl" mode="aspectFill"></image>
-				<view v-else class="avatar avatar-placeholder">
-					<uni-icons type="camera-filled" size="34" color="#9bb8d3"></uni-icons>
-					<text class="avatar-tip">点击上传头像</text>
+				<!-- #ifndef MP-WEIXIN -->
+				<!-- 其他平台退化为本地选图 -->
+				<view class="avatar-btn" @click="chooseAvatarFallback">
+					<image v-if="avatarUrl" class="avatar" :src="avatarUrl" mode="aspectFill"></image>
+					<view v-else class="avatar avatar-placeholder">
+						<uni-icons type="camera-filled" size="34" color="#9bb8d3"></uni-icons>
+						<text class="avatar-tip">点击上传头像</text>
+					</view>
 				</view>
+				<!-- #endif -->
+
+				<view class="form-item">
+					<!-- type="nickname"：聚焦时键盘上方可一键使用微信昵称 -->
+					<input
+						class="nickname-input"
+						type="nickname"
+						v-model="nickname"
+						placeholder="请输入昵称"
+						placeholder-class="input-placeholder"
+						maxlength="20"
+					/>
+				</view>
+
+				<button class="submit-btn" :class="{ disabled: !canSubmit || loading }" :disabled="!canSubmit || loading" @click="handleLogin">
+					{{ loading ? '登录中...' : '一键登录' }}
+				</button>
+
+				<!-- #ifdef H5 -->
+				<view class="migrate-entry" @click="migrateMode = true">使用账号迁移码登录</view>
+				<!-- #endif -->
+			</template>
+
+			<!-- #ifdef H5 -->
+			<view v-if="migrateMode" class="migrate-panel">
+				<view class="migrate-title">账号迁移码登录</view>
+				<view class="migrate-tip">输入小程序「我的 - 账号迁移码」中的八位迁移码</view>
+				<view class="form-item migrate-form-item">
+					<input
+						class="nickname-input migrate-input"
+						type="text"
+						:value="migrateCode"
+						placeholder="请输入 8 位迁移码"
+						placeholder-class="input-placeholder"
+						maxlength="8"
+						confirm-type="done"
+						@input="onMigrateCodeInput"
+						@confirm="handleMigrateLogin"
+					/>
+				</view>
+				<button
+					class="submit-btn migrate-submit"
+					:class="{ disabled: !canMigrate || loading }"
+					:disabled="!canMigrate || loading"
+					@click="handleMigrateLogin"
+				>{{ loading ? '登录中...' : '迁移码登录' }}</button>
+				<view class="back-login" @click="migrateMode = false">返回普通登录</view>
 			</view>
 			<!-- #endif -->
-
-			<view class="form-item">
-				<!-- type="nickname"：聚焦时键盘上方可一键使用微信昵称 -->
-				<input
-					class="nickname-input"
-					type="nickname"
-					v-model="nickname"
-					placeholder="请输入昵称"
-					placeholder-class="input-placeholder"
-					maxlength="20"
-				/>
-			</view>
-
-			<button class="submit-btn" :class="{ disabled: !canSubmit || loading }" :disabled="!canSubmit || loading" @click="handleLogin">
-				{{ loading ? '登录中...' : '一键登录' }}
-			</button>
 		</view>
 	</view>
 </template>
@@ -70,8 +103,11 @@
 	const nickname = ref('');
 	const loading = ref(false);
 	const redirectUrl = ref('');
+	const migrateMode = ref(false);
+	const migrateCode = ref('');
 
 	const canSubmit = computed(() => !!avatarUrl.value && !!nickname.value.trim());
+	const canMigrate = computed(() => /^[A-Z0-9]{8}$/.test(migrateCode.value));
 
 	onLoad((options: any) => {
 		if (options && options.redirect) {
@@ -94,6 +130,52 @@
 			}
 		} catch (e) {
 			// 用户取消，不提示
+		}
+	}
+
+	function onMigrateCodeInput(e: any) {
+		migrateCode.value = String((e && e.detail && e.detail.value) || '')
+			.trim()
+			.toUpperCase()
+			.replace(/[^A-Z0-9]/g, '')
+			.slice(0, 8);
+	}
+
+	async function handleMigrateLogin() {
+		if (loading.value) return;
+		const code = migrateCode.value.trim().toUpperCase();
+		if (!/^[A-Z0-9]{8}$/.test(code)) {
+			uni.showToast({ title: '请输入正确的 8 位迁移码', icon: 'none' });
+			return;
+		}
+
+		loading.value = true;
+		uni.showLoading({ title: '登录中', mask: true });
+		try {
+			const fnRes = await uniCloud.callFunction({
+				name: 'user-login',
+				data: { type: 'migrateByCode', code }
+			});
+			const result = fnRes && fnRes.result;
+			if (!result || result.errCode !== 0) {
+				throw new Error((result && result.errMsg) || '迁移码登录失败');
+			}
+
+			userStore.login({
+				token: result.token,
+				tokenExpired: result.tokenExpired,
+				userInfo: result.userInfo
+			});
+			uni.showToast({ title: '登录成功', icon: 'success' });
+			setTimeout(navigateAfterLogin, 400);
+		} catch (e) {
+			uni.showToast({
+				title: e instanceof Error ? e.message : '迁移码登录失败',
+				icon: 'none'
+			});
+		} finally {
+			loading.value = false;
+			uni.hideLoading();
 		}
 	}
 
@@ -295,6 +377,48 @@
 
 		.input-placeholder {
 			color: #a7bfd3;
+		}
+	}
+
+	.migrate-entry,
+	.back-login {
+		margin-top: 32rpx;
+		font-size: 26rpx;
+		color: #2c88cf;
+		text-align: center;
+	}
+
+	.migrate-panel {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 100%;
+
+		.migrate-title {
+			font-size: 34rpx;
+			font-weight: bold;
+			color: #333;
+		}
+
+		.migrate-tip {
+			margin-top: 18rpx;
+			font-size: 25rpx;
+			line-height: 1.6;
+			color: #7fa9c9;
+			text-align: center;
+		}
+
+		.migrate-form-item {
+			margin-top: 36rpx;
+		}
+
+		.migrate-input {
+			text-align: center;
+			letter-spacing: 6rpx;
+		}
+
+		.migrate-submit {
+			margin-top: 36rpx;
 		}
 	}
 

@@ -48,7 +48,7 @@
 		"migrate_code": {
 			"bsonType": "string",
 			"title": "账号迁移码",
-			"description": "8位大写字母数字，App 换机/重装后凭此码恢复账号；重新生成后旧码立即失效"
+			"description": "8位大写字母数字，H5 端或换机/重装后凭此码恢复账号；重新生成后旧码立即失效"
 		},
 		"migrate_code_time": {
 			"bsonType": "timestamp",

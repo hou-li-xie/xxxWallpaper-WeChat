@@ -21,6 +21,12 @@
 			}
 		},
 		{
+			"path": "pages/Mine/migrate-code",
+			"style": {
+				"navigationBarTitleText": "账号迁移码"
+			}
+		},
+		{
 			"path": "pages/Login/login",
 			"style": {
 				"navigationBarTitleText": "登录"

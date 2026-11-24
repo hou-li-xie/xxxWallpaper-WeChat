@@ -8,11 +8,13 @@ async function toggleLike(ctx) {
 	const { dbCmd, wallpaperCol, likeCol, notiCol, userCol, uid, event } = ctx;
 	const { id } = event;
 	if (!uid) return { errCode: 'LOGIN_REQUIRED', errMsg: '请先登录' };
-	const banned = await requireActiveUser(userCol, uid);
-	if (banned) return banned;
 	if (!id) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少照片ID' };
-
-	const wpRes = await wallpaperCol.doc(id).get();
+	// 封禁校验与照片查询互不依赖，并发执行
+	const [banned, wpRes] = await Promise.all([
+		requireActiveUser(userCol, uid),
+		wallpaperCol.doc(id).get()
+	]);
+	if (banned) return banned;
 	const wallpaper = wpRes.data && wpRes.data[0];
 	if (!wallpaper || wallpaper.audit_status !== 1) {
 		return { errCode: 'NOT_FOUND', errMsg: '照片不存在或未通过审核' };
@@ -25,16 +27,21 @@ async function toggleLike(ctx) {
 
 	let liked;
 	if (existed.data && existed.data.length) {
-		await likeCol.doc(existed.data[0]._id).remove();
-		await wallpaperCol.doc(id).update({ 'info.likeNum': dbCmd.inc(-1) });
+		// 删除点赞记录与更新计数互不依赖，并发执行
+		await Promise.all([
+			likeCol.doc(existed.data[0]._id).remove(),
+			wallpaperCol.doc(id).update({ 'info.likeNum': dbCmd.inc(-1) })
+		]);
 		liked = false;
 	} else {
-		await likeCol.add({
-			wallpaper_id: id,
-			user_id: uid,
-			create_time: Date.now()
-		});
-		await wallpaperCol.doc(id).update({ 'info.likeNum': dbCmd.inc(1) });
+		await Promise.all([
+			likeCol.add({
+				wallpaper_id: id,
+				user_id: uid,
+				create_time: Date.now()
+			}),
+			wallpaperCol.doc(id).update({ 'info.likeNum': dbCmd.inc(1) })
+		]);
 		liked = true;
 
 		// 点赞通知作者（自己赞自己不通知；同一用户同一内容只发一次，防止取消再赞刷通知）
@@ -119,15 +126,23 @@ async function addComment(ctx) {
 	const { db, dbCmd, wallpaperCol, commentCol, notiCol, userCol, uid, event } = ctx;
 	const { id, content, parentId = '', replyId = '' } = event;
 	if (!uid) return { errCode: 'LOGIN_REQUIRED', errMsg: '请先登录后再评论' };
-	const banned = await requireActiveUser(userCol, uid);
-	if (banned) return banned;
 	if (!id) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少照片ID' };
 
 	const text = String(content == null ? '' : content).trim();
 	if (!text) return { errCode: 'CONTENT_EMPTY', errMsg: '评论内容不能为空' };
 	if (text.length > 100) return { errCode: 'CONTENT_TOO_LONG', errMsg: '评论最多100字' };
 
-	const wpRes = await wallpaperCol.doc(id).get();
+	// 封禁校验、照片、评论者资料与回复目标互不依赖，一次并发取回
+	const tasks = [
+		requireActiveUser(userCol, uid),
+		wallpaperCol.doc(id).get(),
+		userCol.doc(uid).get()
+	];
+	if (parentId) tasks.push(commentCol.where({ _id: String(parentId) }).limit(1).get());
+	if (parentId && replyId) tasks.push(commentCol.where({ _id: String(replyId) }).limit(1).get());
+	const [banned, wpRes, userRes, pRes, rRes] = await Promise.all(tasks);
+
+	if (banned) return banned;
 	const wallpaper = wpRes.data && wpRes.data[0];
 	if (!wallpaper || wallpaper.audit_status !== 1) {
 		return { errCode: 'NOT_FOUND', errMsg: '照片不存在或未通过审核' };
@@ -138,7 +153,6 @@ async function addComment(ctx) {
 	let parent_id = null;
 	let reply_to = null;
 	if (parentId) {
-		const pRes = await commentCol.where({ _id: String(parentId) }).limit(1).get();
 		const parent = pRes.data && pRes.data[0];
 		if (!parent || parent.wallpaper_id !== id || parent.parent_id) {
 			return { errCode: 'PARENT_NOT_FOUND', errMsg: '回复的评论不存在' };
@@ -146,7 +160,6 @@ async function addComment(ctx) {
 		parent_id = parent._id;
 
 		if (replyId) {
-			const rRes = await commentCol.where({ _id: String(replyId) }).limit(1).get();
 			const target = rRes.data && rRes.data[0];
 			if (!target || target.wallpaper_id !== id || target.parent_id !== parent_id) {
 				return { errCode: 'REPLY_TARGET_INVALID', errMsg: '回复目标不存在' };
@@ -164,7 +177,6 @@ async function addComment(ctx) {
 	}
 
 	// 取评论者最新昵称头像做快照
-	const userRes = await userCol.doc(uid).get();
 	const user = userRes.data && userRes.data[0];
 	const authorName = (user && user.nickname) || '用户';
 	const authorAvatar = (user && user.avatar) || '';
@@ -258,24 +270,24 @@ async function deleteComment(ctx) {
 	}
 
 	if (comment.parent_id) {
-		// 回复：仅删自身，计数 -1，删除对应通知
-		await commentCol.doc(commentId).remove();
-		await wallpaperCol
-			.doc(comment.wallpaper_id)
-			.update({ 'info.commentNum': dbCmd.inc(-1) });
-		await notiCol.where({ reply_id: commentId }).remove();
+		// 回复：删自身、计数 -1、清理通知互不依赖，并发执行
+		await Promise.all([
+			commentCol.doc(commentId).remove(),
+			wallpaperCol.doc(comment.wallpaper_id).update({ 'info.commentNum': dbCmd.inc(-1) }),
+			notiCol.where({ reply_id: commentId }).remove()
+		]);
 		return { errCode: 0, id: commentId, parentId: comment.parent_id, removedReplies: 0 };
 	}
 
 	// 顶级评论：级联删除其下全部回复，计数 -(1+回复数)，清理该楼下全部通知
 	const replyCountRes = await commentCol.where({ parent_id: commentId }).count();
 	const replyNum = replyCountRes.total || 0;
-	await commentCol.where({ parent_id: commentId }).remove();
-	await commentCol.doc(commentId).remove();
-	await wallpaperCol
-		.doc(comment.wallpaper_id)
-		.update({ 'info.commentNum': dbCmd.inc(-(replyNum + 1)) });
-	await notiCol.where({ parent_id: commentId }).remove();
+	await Promise.all([
+		commentCol.where({ parent_id: commentId }).remove(),
+		commentCol.doc(commentId).remove(),
+		wallpaperCol.doc(comment.wallpaper_id).update({ 'info.commentNum': dbCmd.inc(-(replyNum + 1)) }),
+		notiCol.where({ parent_id: commentId }).remove()
+	]);
 
 	return { errCode: 0, id: commentId, parentId: '', removedReplies: replyNum };
 }
@@ -285,11 +297,13 @@ async function toggleFavorite(ctx) {
 	const { wallpaperCol, favCol, userCol, uid, event } = ctx;
 	const { id } = event;
 	if (!uid) return { errCode: 'LOGIN_REQUIRED', errMsg: '请先登录' };
-	const banned = await requireActiveUser(userCol, uid);
-	if (banned) return banned;
 	if (!id) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少照片ID' };
-
-	const wpRes = await wallpaperCol.doc(id).get();
+	// 封禁校验与照片查询互不依赖，并发执行
+	const [banned, wpRes] = await Promise.all([
+		requireActiveUser(userCol, uid),
+		wallpaperCol.doc(id).get()
+	]);
+	if (banned) return banned;
 	const wallpaper = wpRes.data && wpRes.data[0];
 	if (!wallpaper || wallpaper.audit_status !== 1) {
 		return { errCode: 'NOT_FOUND', errMsg: '照片不存在或未通过审核' };

@@ -8,7 +8,17 @@ async function detail(ctx) {
 	const { wallpaperCol, likeCol, favCol, uid, event } = ctx;
 	const { id } = event;
 	if (!id) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少照片ID' };
-	const wpRes = await wallpaperCol.doc(id).get();
+
+	// 照片、点赞总数、我的点赞/收藏状态互不依赖，一次并发取回，减少串行往返
+	const tasks = [
+		wallpaperCol.doc(id).get(),
+		likeCol.where({ wallpaper_id: id }).count()
+	];
+	if (uid) {
+		tasks.push(likeCol.where({ wallpaper_id: id, user_id: uid }).limit(1).get());
+		tasks.push(favCol.where({ wallpaper_id: id, user_id: uid }).limit(1).get());
+	}
+	const [wpRes, countRes, myLike, myFav] = await Promise.all(tasks);
 	const wallpaper = wpRes.data && wpRes.data[0];
 	if (!wallpaper) {
 		return { errCode: 'NOT_FOUND', errMsg: '照片不存在' };
@@ -18,21 +28,8 @@ async function detail(ctx) {
 		return { errCode: 'NOT_FOUND', errMsg: '照片不存在或未通过审核' };
 	}
 
-	const countRes = await likeCol.where({ wallpaper_id: id }).count();
-	let liked = false;
-	let favorited = false;
-	if (uid) {
-		const myLike = await likeCol
-			.where({ wallpaper_id: id, user_id: uid })
-			.limit(1)
-			.get();
-		liked = !!(myLike.data && myLike.data.length);
-		const myFav = await favCol
-			.where({ wallpaper_id: id, user_id: uid })
-			.limit(1)
-			.get();
-		favorited = !!(myFav.data && myFav.data.length);
-	}
+	const liked = !!(myLike && myLike.data && myLike.data.length);
+	const favorited = !!(myFav && myFav.data && myFav.data.length);
 
 	return {
 		errCode: 0,
@@ -56,21 +53,20 @@ async function recordView(ctx) {
 		const doc = cur.data && cur.data[0];
 		return { errCode: 0, viewCount: (doc && doc.info && doc.info.viewNum) || 0 };
 	}
-	// 先读当前值，失败时可返回旧值而非 0
-	const beforeRes = await wallpaperCol.doc(id).field({ 'info.viewNum': true }).get();
-	const beforeDoc = beforeRes.data && beforeRes.data[0];
-	const beforeCount = (beforeDoc && beforeDoc.info && beforeDoc.info.viewNum) || 0;
+	// 直接自增再读回：省掉“先读旧值”的一次串行查询
 	try {
 		await wallpaperCol
 			.where({ _id: id, audit_status: 1 })
 			.update({ 'info.viewNum': dbCmd.inc(1) });
 	} catch (e) {
-		// 计数失败不影响浏览主流程，返回旧值
-		return { errCode: 0, viewCount: beforeCount };
+		// 计数失败不影响浏览主流程，尽量返回库中当前值
+		const fallbackRes = await wallpaperCol.doc(id).field({ 'info.viewNum': true }).get();
+		const fallbackDoc = fallbackRes.data && fallbackRes.data[0];
+		return { errCode: 0, viewCount: (fallbackDoc && fallbackDoc.info && fallbackDoc.info.viewNum) || 0 };
 	}
 	const after = await wallpaperCol.doc(id).field({ 'info.viewNum': true }).get();
 	const doc = after.data && after.data[0];
-	return { errCode: 0, viewCount: (doc && doc.info && doc.info.viewNum) || beforeCount };
+	return { errCode: 0, viewCount: (doc && doc.info && doc.info.viewNum) || 0 };
 }
 
 /* ========== 发布照片（客户端先上传云存储，再调本 action 落库；封禁用户拦截） ========== */
@@ -187,10 +183,13 @@ async function deleteUpload(ctx) {
 		return { errCode: 'NO_PERMISSION', errMsg: '只能删除自己的上传' };
 	}
 
-	await likeCol.where({ wallpaper_id: id }).remove();
-	await commentCol.where({ wallpaper_id: id }).remove();
-	await notiCol.where({ wallpaper_id: id }).remove();
-	await favCol.where({ wallpaper_id: id }).remove();
+	// 级联清理互不依赖，并发执行
+	await Promise.all([
+		likeCol.where({ wallpaper_id: id }).remove(),
+		commentCol.where({ wallpaper_id: id }).remove(),
+		notiCol.where({ wallpaper_id: id }).remove(),
+		favCol.where({ wallpaper_id: id }).remove()
+	]);
 	await wallpaperCol.doc(id).remove();
 
 	// 云存储图片清理，失败不阻塞（记录已删）

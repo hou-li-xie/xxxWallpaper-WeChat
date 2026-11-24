@@ -63,20 +63,16 @@ async function subscribeInfo(ctx) {
 	let remain = 0;
 	let auditRemain = 0;
 	if (uid) {
-		if (cfg.replyTemplateId) {
-			const subR = await subCol
-				.where({ user_id: uid, tmpl_id: cfg.replyTemplateId })
-				.limit(1)
-				.get();
-			remain = (subR.data && subR.data[0] && subR.data[0].remain) || 0;
-		}
-		if (cfg.auditTemplateId) {
-			const subA = await subCol
-				.where({ user_id: uid, tmpl_id: cfg.auditTemplateId })
-				.limit(1)
-				.get();
-			auditRemain = (subA.data && subA.data[0] && subA.data[0].remain) || 0;
-		}
+		// 两个模板的剩余条数互不依赖，并发查询
+		const replyPromise = cfg.replyTemplateId
+			? subCol.where({ user_id: uid, tmpl_id: cfg.replyTemplateId }).limit(1).get()
+			: null;
+		const auditPromise = cfg.auditTemplateId
+			? subCol.where({ user_id: uid, tmpl_id: cfg.auditTemplateId }).limit(1).get()
+			: null;
+		const [replyRes, auditRes] = await Promise.all([replyPromise, auditPromise]);
+		remain = (replyRes && replyRes.data && replyRes.data[0] && replyRes.data[0].remain) || 0;
+		auditRemain = (auditRes && auditRes.data && auditRes.data[0] && auditRes.data[0].remain) || 0;
 	}
 	return {
 		errCode: 0,

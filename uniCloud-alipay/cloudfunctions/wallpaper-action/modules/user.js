@@ -7,20 +7,22 @@ async function userHome(ctx) {
 	const { wallpaperCol, userCol, event } = ctx;
 	const { targetUid, skip = 0 } = event;
 	if (!targetUid) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少用户ID' };
-	const uRes = await userCol.doc(targetUid).field({ nickname: 1, avatar: 1, last_active_time: 1 }).get();
+	// 用户资料、照片列表、总数互不依赖，并发取回
+	const LIMIT = 20;
+	const [uRes, listRes, countRes] = await Promise.all([
+		userCol.doc(targetUid).field({ nickname: 1, avatar: 1, last_active_time: 1 }).get(),
+		wallpaperCol
+			.where({ author_id: targetUid, audit_status: 1 })
+			.orderBy('createTime', 'desc')
+			.skip(skip)
+			.limit(LIMIT)
+			.get(),
+		wallpaperCol
+			.where({ author_id: targetUid, audit_status: 1 })
+			.count()
+	]);
 	const user = uRes.data && uRes.data[0];
 	if (!user) return { errCode: 'NOT_FOUND', errMsg: '用户不存在' };
-
-	const LIMIT = 20;
-	const listRes = await wallpaperCol
-		.where({ author_id: targetUid, audit_status: 1 })
-		.orderBy('createTime', 'desc')
-		.skip(skip)
-		.limit(LIMIT)
-		.get();
-	const countRes = await wallpaperCol
-		.where({ author_id: targetUid, audit_status: 1 })
-		.count();
 	const list = listRes.data || [];
 	return {
 		errCode: 0,
@@ -47,8 +49,6 @@ async function report(ctx) {
 	const { wallpaperCol, reportCol, userCol, uid, event } = ctx;
 	const { id, reason } = event;
 	if (!uid) return { errCode: 'LOGIN_REQUIRED', errMsg: '请先登录后再举报' };
-	const banned = await requireActiveUser(userCol, uid);
-	if (banned) return banned;
 	if (!id) return { errCode: 'PARAM_ILLEGAL', errMsg: '缺少照片ID' };
 	if (!checkRateLimit('report', uid)) {
 		return { errCode: 'RATE_LIMITED', errMsg: '举报过于频繁，请稍后再试' };
@@ -58,7 +58,12 @@ async function report(ctx) {
 	if (!text) return { errCode: 'PARAM_ILLEGAL', errMsg: '请选择或填写举报原因' };
 	if (text.length > 100) return { errCode: 'PARAM_ILLEGAL', errMsg: '举报原因最多100字' };
 
-	const wpRes = await wallpaperCol.doc(id).get();
+	// 封禁校验与照片查询互不依赖，并发执行
+	const [banned, wpRes] = await Promise.all([
+		requireActiveUser(userCol, uid),
+		wallpaperCol.doc(id).get()
+	]);
+	if (banned) return banned;
 	const wallpaper = wpRes.data && wpRes.data[0];
 	if (!wallpaper) return { errCode: 'NOT_FOUND', errMsg: '照片不存在或已删除' };
 
